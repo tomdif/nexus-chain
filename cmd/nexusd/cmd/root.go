@@ -10,11 +10,19 @@ import (
 	"time"
 
 	"cosmossdk.io/log"
+	"cosmossdk.io/math"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/keys"
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	serverconfig "github.com/cosmos/cosmos-sdk/server/config"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/spf13/cobra"
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
@@ -92,46 +100,195 @@ func InitCmd() *cobra.Command {
 			os.MkdirAll(configDir, 0755)
 			os.MkdirAll(dataDir, 0755)
 
+			// Create CometBFT config
 			cmtConfig := cmtcfg.DefaultConfig()
 			cmtConfig.SetRoot(home)
 			cmtConfig.Moniker = args[0]
 			cmtcfg.WriteConfigFile(filepath.Join(configDir, "config.toml"), cmtConfig)
 
+			// Generate validator private key
 			pvKeyFile := filepath.Join(configDir, "priv_validator_key.json")
 			pvStateFile := filepath.Join(dataDir, "priv_validator_state.json")
 			pv := privval.GenFilePV(pvKeyFile, pvStateFile)
 			pv.Save()
 
+			// Generate node key
 			nodeKeyFile := filepath.Join(configDir, "node_key.json")
 			p2p.LoadOrGenNodeKey(nodeKeyFile)
 
-			pubKey, _ := pv.GetPubKey()
-			pubKeyB64 := base64.StdEncoding.EncodeToString(pubKey.Bytes())
+			// Get validator consensus public key
+			valPubKey, _ := pv.GetPubKey()
+			pubKeyB64 := base64.StdEncoding.EncodeToString(valPubKey.Bytes())
 
-			genFile := filepath.Join(configDir, "genesis.json")
+			// Create a keyring and generate a key for the validator account
+			kr := keyring.NewInMemory(app.MakeEncodingConfig().Codec)
+			
+			// Generate a new key for the validator operator account
+			mnemonic := ""
+			record, mnemonic, err := kr.NewMnemonic(
+				"validator",
+				keyring.English,
+				sdk.GetConfig().GetFullBIP44Path(),
+				keyring.DefaultBIP39Passphrase,
+				hd.Secp256k1,
+			)
+			if err != nil {
+				return err
+			}
+
+			// Get the validator operator address
+			valOperatorAddr, err := record.GetAddress()
+			if err != nil {
+				return err
+			}
+
+			// Get the validator operator public key
+			valOperatorPubKey, err := record.GetPubKey()
+			if err != nil {
+				return err
+			}
+
+			// Convert to validator address
+			valAddr := sdk.ValAddress(valOperatorAddr)
+
+			// Create genesis with proper validator setup
 			enc := app.MakeEncodingConfig()
 			appGenState := app.ModuleBasics.DefaultGenesis(enc.Codec)
-			appState, _ := json.MarshalIndent(appGenState, "", "  ")
 
+			// === AUTH MODULE: Add genesis account ===
+			var authGenState authtypes.GenesisState
+			enc.Codec.MustUnmarshalJSON(appGenState[authtypes.ModuleName], &authGenState)
+
+			genAccount := authtypes.NewBaseAccount(valOperatorAddr, valOperatorPubKey, 0, 0)
+			if err := genAccount.Validate(); err != nil {
+				return err
+			}
+
+			genAccounts := []authtypes.GenesisAccount{genAccount}
+			authGenState.Accounts, err = authtypes.PackAccounts(genAccounts)
+			if err != nil {
+				return err
+			}
+
+			appGenState[authtypes.ModuleName] = enc.Codec.MustMarshalJSON(&authGenState)
+
+			// === BANK MODULE: Add initial balance ===
+			initialBalance := sdk.NewCoins(sdk.NewInt64Coin("unexus", 1000000000000)) // 1M NEX
+			var bankGenState banktypes.GenesisState
+			enc.Codec.MustUnmarshalJSON(appGenState[banktypes.ModuleName], &bankGenState)
+
+			bankGenState.Balances = append(bankGenState.Balances, banktypes.Balance{
+				Address: valOperatorAddr.String(),
+				Coins:   initialBalance,
+			})
+			bankGenState.Supply = bankGenState.Supply.Add(initialBalance...)
+
+			appGenState[banktypes.ModuleName] = enc.Codec.MustMarshalJSON(&bankGenState)
+
+			// === STAKING MODULE: Add validator with delegation ===
+			var stakingGenState stakingtypes.GenesisState
+			enc.Codec.MustUnmarshalJSON(appGenState[stakingtypes.ModuleName], &stakingGenState)
+
+			// Create validator description
+			description := stakingtypes.Description{
+				Moniker:         args[0],
+				Identity:        "",
+				Website:         "",
+				SecurityContact: "",
+				Details:         "Genesis validator",
+			}
+
+			// Create commission rates
+			commission := stakingtypes.CommissionRates{
+				Rate:          math.LegacyNewDecWithPrec(1, 1), // 10%
+				MaxRate:       math.LegacyNewDecWithPrec(2, 1), // 20%
+				MaxChangeRate: math.LegacyNewDecWithPrec(1, 2), // 1%
+			}
+
+			// Self-delegation amount (must be >= DefaultPowerReduction = 1000000)
+			selfDelegation := math.NewInt(100000000000) // 100K NEX = 100000000000 unexus
+
+			// Convert consensus pubkey to Any
+			pkAny, err := cryptotypes.NewAnyWithValue(valPubKey)
+			if err != nil {
+				return err
+			}
+
+			// Create validator
+			validator := stakingtypes.Validator{
+				OperatorAddress:   valAddr.String(),
+				ConsensusPubkey:   pkAny,
+				Jailed:            false,
+				Status:            stakingtypes.Bonded,
+				Tokens:            selfDelegation,
+				DelegatorShares:   math.LegacyNewDecFromInt(selfDelegation),
+				Description:       description,
+				UnbondingHeight:   0,
+				UnbondingTime:     time.Unix(0, 0).UTC(),
+				Commission:        commission,
+				MinSelfDelegation: math.NewInt(1000000), // 1 NEX minimum
+			}
+
+			stakingGenState.Validators = append(stakingGenState.Validators, validator)
+
+			// Create delegation
+			delegation := stakingtypes.Delegation{
+				DelegatorAddress: valOperatorAddr.String(),
+				ValidatorAddress: valAddr.String(),
+				Shares:           math.LegacyNewDecFromInt(selfDelegation),
+			}
+
+			stakingGenState.Delegations = append(stakingGenState.Delegations, delegation)
+
+			appGenState[stakingtypes.ModuleName] = enc.Codec.MustMarshalJSON(&stakingGenState)
+
+			// Marshal final app state
+			appState, err := json.MarshalIndent(appGenState, "", "  ")
+			if err != nil {
+				return err
+			}
+
+			// Create genesis document
+			genFile := filepath.Join(configDir, "genesis.json")
 			genDoc := cmttypes.GenesisDoc{
 				ChainID:         chainID,
 				GenesisTime:     time.Now(),
 				ConsensusParams: cmttypes.DefaultConsensusParams(),
 				AppState:        appState,
 				Validators: []cmttypes.GenesisValidator{{
-					Address: pubKey.Address(),
-					PubKey:  pubKey,
-					Power:   1000,
+					Address: valPubKey.Address(),
+					PubKey:  valPubKey,
+					Power:   selfDelegation.Quo(math.NewInt(1000000)).Int64(), // Convert to consensus power
 					Name:    args[0],
 				}},
 			}
-			genDoc.SaveAs(genFile)
 
+			if err := genDoc.SaveAs(genFile); err != nil {
+				return err
+			}
+
+			// Create app config
 			appCfg := serverconfig.DefaultConfig()
 			appCfg.MinGasPrices = "0unexus"
 			serverconfig.WriteConfigFile(filepath.Join(configDir, "app.toml"), appCfg)
 
-			cmd.Printf("Initialized! Home: %s\nValidator PubKey: %s\n", home, pubKeyB64)
+			cmd.Println("========================================")
+			cmd.Println("  NEXUS Chain Initialized")
+			cmd.Println("========================================")
+			cmd.Printf("  Home: %s\n", home)
+			cmd.Printf("  Chain ID: %s\n", chainID)
+			cmd.Printf("  Moniker: %s\n", args[0])
+			cmd.Println("========================================")
+			cmd.Printf("  Validator Operator Address: %s\n", valOperatorAddr.String())
+			cmd.Printf("  Validator Address: %s\n", valAddr.String())
+			cmd.Printf("  Validator PubKey: %s\n", pubKeyB64)
+			cmd.Printf("  Initial Balance: %s\n", initialBalance.String())
+			cmd.Printf("  Self-Delegation: %s\n", sdk.NewCoin("unexus", selfDelegation).String())
+			cmd.Println("========================================")
+			cmd.Println("  Mnemonic (SAVE THIS!):")
+			cmd.Printf("  %s\n", mnemonic)
+			cmd.Println("========================================")
+
 			return nil
 		},
 	}
