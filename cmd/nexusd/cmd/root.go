@@ -364,7 +364,7 @@ func StartCmd() *cobra.Command {
 			consensusParamsProto := genDoc.ConsensusParams.ToProto()
 
 			// Initialize chain with genesis using InitChain
-			_, err = nexusApp.InitChain(&abcitypes.RequestInitChain{
+			_, err = nexusApp.Init Chain(&abcitypes.RequestInitChain{
 				Time:            genDoc.GenesisTime,
 				ChainId:         genDoc.ChainID,
 				ConsensusParams: &consensusParamsProto,
@@ -375,8 +375,7 @@ func StartCmd() *cobra.Command {
 				return err
 			}
 
-			// Commit the genesis block
-			nexusApp.Commit()
+			// DO NOT call Commit() here - the first commit happens after first FinalizeBlock
 
 			// Load node key for display
 			nodeKeyFile := filepath.Join(configDir, "node_key.json")
