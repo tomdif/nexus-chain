@@ -2,24 +2,32 @@ package types
 
 import (
 	"github.com/cosmos/cosmos-sdk/codec"
-	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/codec/legacy"
+	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 func RegisterCodec(cdc *codec.LegacyAmino) {
-	cdc.RegisterConcrete(&MsgPostJob{}, "nexus/mining/MsgPostJob", nil)
-	cdc.RegisterConcrete(&MsgSubmitProof{}, "nexus/mining/MsgSubmitProof", nil)
-	cdc.RegisterConcrete(&MsgClaimRewards{}, "nexus/mining/MsgClaimRewards", nil)
-	cdc.RegisterConcrete(&MsgCancelJob{}, "nexus/mining/MsgCancelJob", nil)
+	legacy.RegisterAminoMsg(cdc, &MsgPostJob{}, "nexus/MsgPostJob")
+	legacy.RegisterAminoMsg(cdc, &MsgSubmitProof{}, "nexus/MsgSubmitProof")
+	legacy.RegisterAminoMsg(cdc, &MsgClaimRewards{}, "nexus/MsgClaimRewards")
+	legacy.RegisterAminoMsg(cdc, &MsgCancelJob{}, "nexus/MsgCancelJob")
 }
 
-func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
-	// Skip SDK Msg registration for now - requires proper protobuf generation
+func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
+	registry.RegisterImplementations((*sdk.Msg)(nil),
+		&MsgPostJob{},
+		&MsgSubmitProof{},
+		&MsgClaimRewards{},
+		&MsgCancelJob{},
+	)
 }
 
-func RegisterMsgServer(registry codectypes.InterfaceRegistry, srv MsgServer) {
-	// Placeholder for gRPC registration
-}
+var (
+	Amino     = codec.NewLegacyAmino()
+	ModuleCdc = codec.NewProtoCodec(cdctypes.NewInterfaceRegistry())
+)
 
-func RegisterQueryServer(registry codectypes.InterfaceRegistry, srv QueryServer) {
-	// Placeholder for gRPC registration
+func init() {
+	RegisterCodec(Amino)
 }

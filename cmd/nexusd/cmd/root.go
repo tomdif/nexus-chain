@@ -9,7 +9,9 @@ import (
 
 	"cosmossdk.io/log"
 	dbm "github.com/cosmos/cosmos-db"
+	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
+	"github.com/cosmos/cosmos-sdk/client/keys"
 	serverconfig "github.com/cosmos/cosmos-sdk/server/config"
 	"github.com/spf13/cobra"
 
@@ -19,16 +21,60 @@ import (
 	cmttypes "github.com/cometbft/cometbft/types"
 
 	"nexus/app"
+	miningcli "nexus/x/mining/client/cli"
 )
 
 func NewRootCmd() *cobra.Command {
+	encodingConfig := app.MakeEncodingConfig()
+
+	initClientCtx := client.Context{}.
+		WithCodec(encodingConfig.Codec).
+		WithInterfaceRegistry(encodingConfig.InterfaceRegistry).
+		WithTxConfig(encodingConfig.TxConfig).
+		WithLegacyAmino(encodingConfig.Amino).
+		WithInput(os.Stdin).
+		WithHomeDir(app.DefaultNodeHome)
+
 	rootCmd := &cobra.Command{
 		Use:   "nexusd",
 		Short: "NEXUS Chain",
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if err := client.SetCmdClientContextHandler(initClientCtx, cmd); err != nil {
+				return err
+			}
+			return nil
+		},
 	}
-	rootCmd.AddCommand(InitCmd(), StartCmd(), VersionCmd())
+
+	rootCmd.AddCommand(
+		InitCmd(),
+		StartCmd(),
+		TxCmd(),
+		QueryCmd(),
+		keys.Commands(),
+		VersionCmd(),
+	)
 	rootCmd.PersistentFlags().String(flags.FlagHome, app.DefaultNodeHome, "home")
 	return rootCmd
+}
+
+func TxCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "tx",
+		Short: "Transaction commands",
+	}
+	cmd.AddCommand(miningcli.GetTxCmd())
+	return cmd
+}
+
+func QueryCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "query",
+		Short: "Query commands",
+		Aliases: []string{"q"},
+	}
+	cmd.AddCommand(miningcli.GetQueryCmd())
+	return cmd
 }
 
 func InitCmd() *cobra.Command {

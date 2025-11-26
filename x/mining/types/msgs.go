@@ -13,14 +13,14 @@ const (
 
 // MsgPostJob
 type MsgPostJob struct {
-	Customer    string    `json:"customer"`
-	ProblemType string    `json:"problem_type"`
-	ProblemData []byte    `json:"problem_data"`
-	ProblemHash string    `json:"problem_hash"`
-	Threshold   int64     `json:"threshold"`
-	Reward      sdk.Coins `json:"reward"`
-	Duration    int64     `json:"duration"`
-	QuantumSafe bool      `json:"quantum_safe"`
+	Customer    string    `protobuf:"bytes,1,opt,name=customer,proto3" json:"customer,omitempty"`
+	ProblemType string    `protobuf:"bytes,2,opt,name=problem_type,json=problemType,proto3" json:"problem_type,omitempty"`
+	ProblemData []byte    `protobuf:"bytes,3,opt,name=problem_data,json=problemData,proto3" json:"problem_data,omitempty"`
+	ProblemHash string    `protobuf:"bytes,4,opt,name=problem_hash,json=problemHash,proto3" json:"problem_hash,omitempty"`
+	Threshold   int64     `protobuf:"varint,5,opt,name=threshold,proto3" json:"threshold,omitempty"`
+	Reward      sdk.Coins `protobuf:"bytes,6,rep,name=reward,proto3,castrepeated=github.com/cosmos/cosmos-sdk/types.Coins" json:"reward"`
+	Duration    int64     `protobuf:"varint,7,opt,name=duration,proto3" json:"duration,omitempty"`
+	QuantumSafe bool      `protobuf:"varint,8,opt,name=quantum_safe,json=quantumSafe,proto3" json:"quantum_safe,omitempty"`
 }
 
 func (m *MsgPostJob) Reset()         { *m = MsgPostJob{} }
@@ -42,12 +42,12 @@ func (msg MsgPostJob) GetSigners() []sdk.AccAddress {
 
 // MsgSubmitProof
 type MsgSubmitProof struct {
-	Miner        string `json:"miner"`
-	JobId        string `json:"job_id"`
-	Energy       int64  `json:"energy"`
-	Proof        []byte `json:"proof"`
-	ProofType    string `json:"proof_type"`
-	SolutionHash string `json:"solution_hash"`
+	Miner        string `protobuf:"bytes,1,opt,name=miner,proto3" json:"miner,omitempty"`
+	JobId        string `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	Energy       int64  `protobuf:"varint,3,opt,name=energy,proto3" json:"energy,omitempty"`
+	Proof        []byte `protobuf:"bytes,4,opt,name=proof,proto3" json:"proof,omitempty"`
+	ProofType    string `protobuf:"bytes,5,opt,name=proof_type,json=proofType,proto3" json:"proof_type,omitempty"`
+	SolutionHash string `protobuf:"bytes,6,opt,name=solution_hash,json=solutionHash,proto3" json:"solution_hash,omitempty"`
 }
 
 func (m *MsgSubmitProof) Reset()         { *m = MsgSubmitProof{} }
@@ -69,8 +69,8 @@ func (msg MsgSubmitProof) GetSigners() []sdk.AccAddress {
 
 // MsgClaimRewards
 type MsgClaimRewards struct {
-	Claimer string `json:"claimer"`
-	JobId   string `json:"job_id"`
+	Claimer string `protobuf:"bytes,1,opt,name=claimer,proto3" json:"claimer,omitempty"`
+	JobId   string `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 }
 
 func (m *MsgClaimRewards) Reset()         { *m = MsgClaimRewards{} }
@@ -92,8 +92,8 @@ func (msg MsgClaimRewards) GetSigners() []sdk.AccAddress {
 
 // MsgCancelJob
 type MsgCancelJob struct {
-	Customer string `json:"customer"`
-	JobId    string `json:"job_id"`
+	Customer string `protobuf:"bytes,1,opt,name=customer,proto3" json:"customer,omitempty"`
+	JobId    string `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 }
 
 func (m *MsgCancelJob) Reset()         { *m = MsgCancelJob{} }
