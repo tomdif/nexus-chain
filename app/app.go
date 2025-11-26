@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -9,11 +10,14 @@ import (
 	"cosmossdk.io/log"
 	storetypes "cosmossdk.io/store/types"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/runtime"
+	"github.com/cosmos/cosmos-sdk/server/api"
+	"github.com/cosmos/cosmos-sdk/server/config"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 	"github.com/cosmos/cosmos-sdk/std"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -40,6 +44,7 @@ import (
 const (
 	AccountAddressPrefix = "nexus"
 	Name                 = "nexus"
+	BondDenom            = "unexus"
 )
 
 var (
@@ -64,7 +69,16 @@ var (
 func init() {
 	userHomeDir, _ := os.UserHomeDir()
 	DefaultNodeHome = filepath.Join(userHomeDir, ".nexus")
+
+	// Set address prefixes
+	cfg := sdk.GetConfig()
+	cfg.SetBech32PrefixForAccount(AccountAddressPrefix, AccountAddressPrefix+"pub")
+	cfg.SetBech32PrefixForValidator(AccountAddressPrefix+"valoper", AccountAddressPrefix+"valoperpub")
+	cfg.SetBech32PrefixForConsensusNode(AccountAddressPrefix+"valcons", AccountAddressPrefix+"valconspub")
+	cfg.Seal()
 }
+
+var _ servertypes.Application = (*App)(nil)
 
 type App struct {
 	*baseapp.BaseApp
@@ -81,7 +95,8 @@ type App struct {
 	StakingKeeper *stakingkeeper.Keeper
 	MiningKeeper  miningkeeper.Keeper
 
-	ModuleManager *module.Manager
+	ModuleManager      *module.Manager
+	BasicModuleManager module.BasicManager
 }
 
 func New(
@@ -101,6 +116,7 @@ func New(
 
 	bApp := baseapp.NewBaseApp(Name, logger, db, txConfig.TxDecoder(), baseAppOptions...)
 	bApp.SetInterfaceRegistry(interfaceRegistry)
+	bApp.SetTxEncoder(txConfig.TxEncoder())
 
 	keys := storetypes.NewKVStoreKeys(
 		authtypes.StoreKey,
@@ -123,7 +139,7 @@ func New(
 		runtime.NewKVStoreService(keys[authtypes.StoreKey]),
 		authtypes.ProtoBaseAccount,
 		maccPerms,
-		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
+		authcodec.NewBech32Codec(AccountAddressPrefix),
 		AccountAddressPrefix,
 		authtypes.NewModuleAddress(authtypes.ModuleName).String(),
 	)
@@ -143,8 +159,8 @@ func New(
 		app.AccountKeeper,
 		app.BankKeeper,
 		authtypes.NewModuleAddress(authtypes.ModuleName).String(),
-		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ValidatorAddrPrefix()),
-		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ConsensusAddrPrefix()),
+		authcodec.NewBech32Codec(AccountAddressPrefix+"valoper"),
+		authcodec.NewBech32Codec(AccountAddressPrefix+"valcons"),
 	)
 
 	app.MiningKeeper = miningkeeper.NewKeeper(
@@ -162,6 +178,11 @@ func New(
 		staking.NewAppModule(cdc, app.StakingKeeper, app.AccountKeeper, app.BankKeeper, nil),
 		genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig),
 		miningmodule.NewAppModule(cdc, app.MiningKeeper),
+	)
+
+	app.BasicModuleManager = module.NewBasicManagerFromManager(
+		app.ModuleManager,
+		map[string]module.AppModuleBasic{},
 	)
 
 	app.ModuleManager.SetOrderBeginBlockers(
@@ -190,7 +211,14 @@ func New(
 	app.ModuleManager.SetOrderInitGenesis(genesisModuleOrder...)
 	app.ModuleManager.SetOrderExportGenesis(genesisModuleOrder...)
 
+	app.ModuleManager.RegisterServices(app.configurator())
+
 	app.MountKVStores(keys)
+
+	app.SetInitChainer(app.InitChainer)
+	app.SetPreBlocker(app.PreBlocker)
+	app.SetBeginBlocker(app.BeginBlocker)
+	app.SetEndBlocker(app.EndBlocker)
 
 	if loadLatest {
 		if err := app.LoadLatestVersion(); err != nil {
@@ -201,11 +229,65 @@ func New(
 	return app
 }
 
-func (app *App) Name() string                                      { return app.BaseApp.Name() }
-func (app *App) LegacyAmino() *codec.LegacyAmino                   { return app.legacyAmino }
-func (app *App) AppCodec() codec.Codec                             { return app.cdc }
-func (app *App) InterfaceRegistry() codectypes.InterfaceRegistry   { return app.interfaceRegistry }
-func (app *App) TxConfig() client.TxConfig                         { return app.txConfig }
+func (app *App) configurator() module.Configurator {
+	return module.NewConfigurator(app.cdc, app.MsgServiceRouter(), app.GRPCQueryRouter())
+}
+
+func (app *App) Name() string                             { return app.BaseApp.Name() }
+func (app *App) LegacyAmino() *codec.LegacyAmino          { return app.legacyAmino }
+func (app *App) AppCodec() codec.Codec                    { return app.cdc }
+func (app *App) InterfaceRegistry() codectypes.InterfaceRegistry { return app.interfaceRegistry }
+func (app *App) TxConfig() client.TxConfig                { return app.txConfig }
+func (app *App) GetKey(storeKey string) *storetypes.KVStoreKey { return app.keys[storeKey] }
+
+// InitChainer handles genesis initialization
+func (app *App) InitChainer(ctx sdk.Context, req *abci.RequestInitChain) (*abci.ResponseInitChain, error) {
+	var genesisState map[string]json.RawMessage
+	if err := json.Unmarshal(req.AppStateBytes, &genesisState); err != nil {
+		panic(err)
+	}
+	return app.ModuleManager.InitGenesis(ctx, app.cdc, genesisState)
+}
+
+// PreBlocker runs before BeginBlock
+func (app *App) PreBlocker(ctx sdk.Context, req *abci.RequestFinalizeBlock) (*sdk.ResponsePreBlock, error) {
+	return app.ModuleManager.PreBlock(ctx)
+}
+
+// BeginBlocker runs at the start of each block
+func (app *App) BeginBlocker(ctx sdk.Context) (sdk.BeginBlock, error) {
+	return app.ModuleManager.BeginBlock(ctx)
+}
+
+// EndBlocker runs at the end of each block
+func (app *App) EndBlocker(ctx sdk.Context) (sdk.EndBlock, error) {
+	return app.ModuleManager.EndBlock(ctx)
+}
+
+// RegisterAPIRoutes registers REST API routes
+func (app *App) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.APIConfig) {
+	// Register API routes here
+}
+
+// RegisterTxService registers gRPC tx service
+func (app *App) RegisterTxService(clientCtx client.Context) {
+	// Register tx service
+}
+
+// RegisterTendermintService registers Tendermint service
+func (app *App) RegisterTendermintService(clientCtx client.Context) {
+	// Register tendermint service
+}
+
+// RegisterNodeService registers node service
+func (app *App) RegisterNodeService(clientCtx client.Context, cfg config.Config) {
+	// Register node service
+}
+
+// DefaultGenesis returns default genesis state
+func (app *App) DefaultGenesis() map[string]json.RawMessage {
+	return app.BasicModuleManager.DefaultGenesis(app.cdc)
+}
 
 type EncodingConfig struct {
 	InterfaceRegistry codectypes.InterfaceRegistry
