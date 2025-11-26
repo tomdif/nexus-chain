@@ -313,8 +313,8 @@ func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimReward
 		)
 	}
 
-	// Track validator share for distribution (stays in module)
-	// TODO: Add to validator reward pool for checkpoint-based distribution
+	// Add validator share to reward pool for checkpoint distribution
+	k.AddToValidatorRewardPool(ctx, validatorShare)
 	if validatorShare > 0 {
 		ctx.EventManager().EmitEvent(
 			sdk.NewEvent(

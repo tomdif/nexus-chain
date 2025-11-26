@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"fmt"
 	"testing"
 
 	"cosmossdk.io/log"
@@ -195,4 +196,55 @@ func TestInsufficientFunds(t *testing.T) {
 		Threshold: 1000, Reward: sdk.NewCoins(sdk.NewInt64Coin("unexus", 1000000)), Duration: 100,
 	})
 	if err == nil { t.Error("Expected error") } else { t.Logf("Correctly rejected: %v", err) }
+}
+
+func TestValidatorRewardPoolAccumulation(t *testing.T) {
+	bankKeeper := NewMockBankKeeper()
+	k, ctx := setupKeeperWithBank(t, bankKeeper)
+	msgServer := keeper.NewMsgServerImpl(k)
+
+	customerAddr, _ := sdk.AccAddressFromBech32(testCustomer)
+	bankKeeper.SetBalance(customerAddr, sdk.NewCoins(sdk.NewInt64Coin("unexus", 100000000)))
+
+	t.Logf("=== VALIDATOR REWARD POOL ACCUMULATION ===")
+
+	// Initial pool should be 0
+	pool := k.GetValidatorRewardPool(ctx)
+	if pool != 0 {
+		t.Errorf("Initial pool: expected 0, got %d", pool)
+	}
+	t.Logf("Initial pool: %d", pool)
+
+	// Post and complete 3 jobs
+	for i := 1; i <= 3; i++ {
+		postResp, _ := msgServer.PostJob(sdk.WrapSDKContext(ctx), &types.MsgPostJob{
+			Customer: testCustomer, 
+			ProblemHash: fmt.Sprintf("000000000000000000000000000000000000000000000000000000000000000%d", i),
+			Threshold: 1000, 
+			Reward: sdk.NewCoins(sdk.NewInt64Coin("unexus", 1000000)), 
+			Duration: 100,
+		})
+
+		msgServer.SubmitProof(sdk.WrapSDKContext(ctx), &types.MsgSubmitProof{
+			Miner: testMiner, JobId: postResp.JobId, Energy: -500, 
+			Proof: []byte{0xde, 0xad, 0xbe, 0xef},
+			SolutionHash: fmt.Sprintf("000000000000000000000000000000000000000000000000000000000000001%d", i),
+		})
+
+		msgServer.ClaimRewards(sdk.WrapSDKContext(ctx), &types.MsgClaimRewards{
+			Claimer: testMiner, JobId: postResp.JobId,
+		})
+
+		pool = k.GetValidatorRewardPool(ctx)
+		t.Logf("After job %d: pool = %d", i, pool)
+	}
+
+	// Each job: 1M gross -> 980K net -> 196K validator share
+	// 3 jobs = 3 * 196K = 588K
+	expectedPool := int64(588000)
+	if pool != expectedPool {
+		t.Errorf("Final pool: expected %d, got %d", expectedPool, pool)
+	} else {
+		t.Logf("Validator pool accumulated correctly: %d (3 x 196K)", pool)
+	}
 }
