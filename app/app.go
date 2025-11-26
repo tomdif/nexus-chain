@@ -30,6 +30,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	consensusparamkeeper "github.com/cosmos/cosmos-sdk/x/consensus/keeper"
+	consensusparamtypes "github.com/cosmos/cosmos-sdk/x/consensus/types"
 	"github.com/cosmos/cosmos-sdk/x/genutil"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 	"github.com/cosmos/cosmos-sdk/x/staking"
@@ -91,10 +93,11 @@ type App struct {
 
 	keys map[string]*storetypes.KVStoreKey
 
-	AccountKeeper authkeeper.AccountKeeper
-	BankKeeper    bankkeeper.Keeper
-	StakingKeeper *stakingkeeper.Keeper
-	MiningKeeper  miningkeeper.Keeper
+	AccountKeeper         authkeeper.AccountKeeper
+	BankKeeper            bankkeeper.Keeper
+	StakingKeeper         *stakingkeeper.Keeper
+	MiningKeeper          miningkeeper.Keeper
+	ConsensusParamsKeeper consensusparamkeeper.Keeper
 
 	ModuleManager      *module.Manager
 	BasicModuleManager module.BasicManager
@@ -128,6 +131,7 @@ func New(
 		banktypes.StoreKey,
 		stakingtypes.StoreKey,
 		miningtypes.StoreKey,
+		consensusparamtypes.StoreKey,
 	)
 
 	app := &App{
@@ -167,6 +171,16 @@ func New(
 		authcodec.NewBech32Codec(AccountAddressPrefix+"valoper"),
 		authcodec.NewBech32Codec(AccountAddressPrefix+"valcons"),
 	)
+
+	app.ConsensusParamsKeeper = consensusparamkeeper.NewKeeper(
+		cdc,
+		runtime.NewKVStoreService(keys[consensusparamtypes.StoreKey]),
+		authtypes.NewModuleAddress(authtypes.ModuleName).String(),
+		runtime.EventService{},
+	)
+
+	// Set consensus params store in baseapp
+	bApp.SetParamStore(app.ConsensusParamsKeeper.ParamsStore)
 
 	app.MiningKeeper = miningkeeper.NewKeeper(
 		cdc,
