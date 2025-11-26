@@ -44,7 +44,7 @@ type VerifyResponse struct {
 // VerifierURL is the address of the Nova verification service
 const VerifierURL = "http://localhost:3000/verify"
 
-// PostJob creates a new mining job and escrows the reward
+// PostJob creates a new mining job, burns job fee, and escrows the net reward
 func (k msgServer) PostJob(goCtx context.Context, msg *types.MsgPostJob) (*types.MsgPostJobResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
@@ -52,24 +52,60 @@ func (k msgServer) PostJob(goCtx context.Context, msg *types.MsgPostJob) (*types
 	jobID := fmt.Sprintf("job_%d_%s", ctx.BlockHeight(), msg.Customer[:8])
 
 	// Convert sdk.Coins reward to int64 (use first coin amount)
-	var rewardAmount int64
+	var grossRewardAmount int64
 	if len(msg.Reward) > 0 {
-		rewardAmount = msg.Reward[0].Amount.Int64()
+		grossRewardAmount = msg.Reward[0].Amount.Int64()
 	}
 
-	// Escrow reward from customer to module account
+	// Calculate fee burn (2% of reward)
+	params := k.GetParams(ctx)
+	feeBurnPercent := int64(params.JobFeeBurnPercent)
+	feeBurnAmount := (grossRewardAmount * feeBurnPercent) / 100
+	netRewardAmount := grossRewardAmount - feeBurnAmount
+
+	// Transfer gross amount from customer to module
 	if k.bankKeeper != nil && len(msg.Reward) > 0 {
 		customerAddr, err := sdk.AccAddressFromBech32(msg.Customer)
 		if err != nil {
 			return nil, types.ErrInvalidJob
 		}
-		
+
+		// Transfer full amount to module first
 		err = k.bankKeeper.SendCoinsFromAccountToModule(ctx, customerAddr, types.ModuleName, msg.Reward)
 		if err != nil {
 			return nil, fmt.Errorf("failed to escrow reward: %w", err)
 		}
-		
-		ctx.Logger().Info("Escrowed job reward", "job_id", jobID, "amount", msg.Reward.String())
+
+		// Burn the fee portion
+		if feeBurnAmount > 0 {
+			feeBurnCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", feeBurnAmount))
+			err = k.bankKeeper.BurnCoins(ctx, types.ModuleName, feeBurnCoins)
+			if err != nil {
+				return nil, fmt.Errorf("failed to burn job fee: %w", err)
+			}
+
+			ctx.Logger().Info("Burned job fee",
+				"job_id", jobID,
+				"fee_burned", feeBurnCoins.String(),
+				"net_reward", netRewardAmount,
+			)
+
+			ctx.EventManager().EmitEvent(
+				sdk.NewEvent(
+					"fee_burned",
+					sdk.NewAttribute("job_id", jobID),
+					sdk.NewAttribute("amount", feeBurnCoins.String()),
+					sdk.NewAttribute("type", "job_fee"),
+				),
+			)
+		}
+
+		ctx.Logger().Info("Escrowed job reward",
+			"job_id", jobID,
+			"gross", msg.Reward.String(),
+			"fee_burned", feeBurnAmount,
+			"net_escrowed", netRewardAmount,
+		)
 	}
 
 	job := types.Job{
@@ -79,7 +115,7 @@ func (k msgServer) PostJob(goCtx context.Context, msg *types.MsgPostJob) (*types
 		ProblemData: msg.ProblemData,
 		ProblemHash: msg.ProblemHash,
 		Threshold:   msg.Threshold,
-		Reward:      rewardAmount,
+		Reward:      netRewardAmount, // Store net reward (after fee burn)
 		Status:      types.JobStatusActive,
 		BestEnergy:  0,
 		BestSolver:  "",
@@ -96,7 +132,9 @@ func (k msgServer) PostJob(goCtx context.Context, msg *types.MsgPostJob) (*types
 			sdk.NewAttribute("job_id", jobID),
 			sdk.NewAttribute("customer", msg.Customer),
 			sdk.NewAttribute("threshold", fmt.Sprintf("%d", msg.Threshold)),
-			sdk.NewAttribute("reward", fmt.Sprintf("%d", rewardAmount)),
+			sdk.NewAttribute("gross_reward", fmt.Sprintf("%d", grossRewardAmount)),
+			sdk.NewAttribute("fee_burned", fmt.Sprintf("%d", feeBurnAmount)),
+			sdk.NewAttribute("net_reward", fmt.Sprintf("%d", netRewardAmount)),
 		),
 	)
 
@@ -240,11 +278,21 @@ func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimReward
 		return nil, types.ErrNoShares
 	}
 
-	// Calculate reward: (miner_shares / total_shares) * reward * miner_percent
+	// Calculate reward distribution:
+	// - MinerSharePercent (80%) goes to miner
+	// - ValidatorSharePercent (20%) is burned (deflationary)
 	params := k.GetParams(ctx)
 	minerPercent := int64(params.MinerSharePercent)
 
-	minerReward := (shares * job.Reward * minerPercent) / (job.TotalShares * 100)
+	// Miner's proportional share of the reward pool
+	minerProportionalReward := (shares * job.Reward) / job.TotalShares
+
+	// Apply miner percentage (80%)
+	minerReward := (minerProportionalReward * minerPercent) / 100
+
+	// Validator share (20%) - this will be burned for deflationary pressure
+	validatorShare := minerProportionalReward - minerReward
+
 	rewardCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", minerReward))
 
 	// Transfer tokens from module to claimer
@@ -253,14 +301,38 @@ func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimReward
 		if err != nil {
 			return nil, fmt.Errorf("failed to transfer reward: %w", err)
 		}
-		
-		ctx.Logger().Info("Transferred mining reward", 
-			"job_id", msg.JobId, 
-			"claimer", msg.Claimer, 
-			"amount", rewardCoins.String(),
+
+		ctx.Logger().Info("Transferred mining reward",
+			"job_id", msg.JobId,
+			"claimer", msg.Claimer,
+			"miner_reward", rewardCoins.String(),
 			"shares", shares,
 			"total_shares", job.TotalShares,
 		)
+	}
+
+	// Burn the validator share (deflationary mechanism)
+	if k.bankKeeper != nil && validatorShare > 0 {
+		validatorBurnCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", validatorShare))
+		err = k.bankKeeper.BurnCoins(ctx, types.ModuleName, validatorBurnCoins)
+		if err != nil {
+			// Log but don't fail - the miner already got their reward
+			ctx.Logger().Error("Failed to burn validator share", "error", err)
+		} else {
+			ctx.Logger().Info("Burned validator share",
+				"job_id", msg.JobId,
+				"amount", validatorBurnCoins.String(),
+			)
+
+			ctx.EventManager().EmitEvent(
+				sdk.NewEvent(
+					"fee_burned",
+					sdk.NewAttribute("job_id", msg.JobId),
+					sdk.NewAttribute("amount", validatorBurnCoins.String()),
+					sdk.NewAttribute("type", "validator_share"),
+				),
+			)
+		}
 	}
 
 	// Clear shares to mark as claimed
@@ -271,7 +343,8 @@ func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimReward
 			"rewards_claimed",
 			sdk.NewAttribute("job_id", msg.JobId),
 			sdk.NewAttribute("claimer", msg.Claimer),
-			sdk.NewAttribute("amount", rewardCoins.String()),
+			sdk.NewAttribute("miner_reward", rewardCoins.String()),
+			sdk.NewAttribute("validator_burned", fmt.Sprintf("%d", validatorShare)),
 			sdk.NewAttribute("shares", fmt.Sprintf("%d", shares)),
 		),
 	)
@@ -297,20 +370,24 @@ func (k msgServer) CancelJob(goCtx context.Context, msg *types.MsgCancelJob) (*t
 		return nil, types.ErrCannotCancel
 	}
 
-	// Refund reward to customer
+	// Refund net reward to customer (fee was already burned on PostJob)
 	if k.bankKeeper != nil && job.Reward > 0 {
 		customerAddr, err := sdk.AccAddressFromBech32(msg.Customer)
 		if err != nil {
 			return nil, types.ErrUnauthorized
 		}
-		
+
 		refundCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", job.Reward))
 		err = k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, customerAddr, refundCoins)
 		if err != nil {
 			return nil, fmt.Errorf("failed to refund: %w", err)
 		}
-		
-		ctx.Logger().Info("Refunded cancelled job", "job_id", msg.JobId, "amount", refundCoins.String())
+
+		ctx.Logger().Info("Refunded cancelled job",
+			"job_id", msg.JobId,
+			"amount", refundCoins.String(),
+			"note", "job fee was already burned",
+		)
 	}
 
 	job.Status = types.JobStatusCancelled
@@ -321,6 +398,7 @@ func (k msgServer) CancelJob(goCtx context.Context, msg *types.MsgCancelJob) (*t
 			"job_cancelled",
 			sdk.NewAttribute("job_id", msg.JobId),
 			sdk.NewAttribute("customer", msg.Customer),
+			sdk.NewAttribute("refunded", fmt.Sprintf("%d", job.Reward)),
 		),
 	)
 
