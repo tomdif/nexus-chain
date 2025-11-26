@@ -76,7 +76,7 @@ func (k msgServer) PostJob(goCtx context.Context, msg *types.MsgPostJob) (*types
 			return nil, fmt.Errorf("failed to escrow reward: %w", err)
 		}
 
-		// Burn the fee portion
+		// Burn the fee portion (2% job fee - deflationary)
 		if feeBurnAmount > 0 {
 			feeBurnCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", feeBurnAmount))
 			err = k.bankKeeper.BurnCoins(ctx, types.ModuleName, feeBurnCoins)
@@ -260,6 +260,7 @@ func (k msgServer) verifyNovaProof(msg *types.MsgSubmitProof, job types.Job) (bo
 }
 
 // ClaimRewards allows miners to claim their earned rewards with actual token transfer
+// Validator share remains in module for later distribution to validators
 func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimRewards) (*types.MsgClaimRewardsResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
@@ -280,7 +281,7 @@ func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimReward
 
 	// Calculate reward distribution:
 	// - MinerSharePercent (80%) goes to miner
-	// - ValidatorSharePercent (20%) is burned (deflationary)
+	// - ValidatorSharePercent (20%) stays in module for validator distribution
 	params := k.GetParams(ctx)
 	minerPercent := int64(params.MinerSharePercent)
 
@@ -290,12 +291,12 @@ func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimReward
 	// Apply miner percentage (80%)
 	minerReward := (minerProportionalReward * minerPercent) / 100
 
-	// Validator share (20%) - this will be burned for deflationary pressure
+	// Validator share (20%) - stays in module for later distribution
 	validatorShare := minerProportionalReward - minerReward
 
 	rewardCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", minerReward))
 
-	// Transfer tokens from module to claimer
+	// Transfer tokens from module to miner
 	if k.bankKeeper != nil && minerReward > 0 {
 		err = k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, claimerAddr, rewardCoins)
 		if err != nil {
@@ -306,33 +307,22 @@ func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimReward
 			"job_id", msg.JobId,
 			"claimer", msg.Claimer,
 			"miner_reward", rewardCoins.String(),
+			"validator_share_held", validatorShare,
 			"shares", shares,
 			"total_shares", job.TotalShares,
 		)
 	}
 
-	// Burn the validator share (deflationary mechanism)
-	if k.bankKeeper != nil && validatorShare > 0 {
-		validatorBurnCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", validatorShare))
-		err = k.bankKeeper.BurnCoins(ctx, types.ModuleName, validatorBurnCoins)
-		if err != nil {
-			// Log but don't fail - the miner already got their reward
-			ctx.Logger().Error("Failed to burn validator share", "error", err)
-		} else {
-			ctx.Logger().Info("Burned validator share",
-				"job_id", msg.JobId,
-				"amount", validatorBurnCoins.String(),
-			)
-
-			ctx.EventManager().EmitEvent(
-				sdk.NewEvent(
-					"fee_burned",
-					sdk.NewAttribute("job_id", msg.JobId),
-					sdk.NewAttribute("amount", validatorBurnCoins.String()),
-					sdk.NewAttribute("type", "validator_share"),
-				),
-			)
-		}
+	// Track validator share for distribution (stays in module)
+	// TODO: Add to validator reward pool for checkpoint-based distribution
+	if validatorShare > 0 {
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				"validator_share_accrued",
+				sdk.NewAttribute("job_id", msg.JobId),
+				sdk.NewAttribute("amount", fmt.Sprintf("%d", validatorShare)),
+			),
+		)
 	}
 
 	// Clear shares to mark as claimed
@@ -344,7 +334,7 @@ func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimReward
 			sdk.NewAttribute("job_id", msg.JobId),
 			sdk.NewAttribute("claimer", msg.Claimer),
 			sdk.NewAttribute("miner_reward", rewardCoins.String()),
-			sdk.NewAttribute("validator_burned", fmt.Sprintf("%d", validatorShare)),
+			sdk.NewAttribute("validator_share", fmt.Sprintf("%d", validatorShare)),
 			sdk.NewAttribute("shares", fmt.Sprintf("%d", shares)),
 		),
 	)
