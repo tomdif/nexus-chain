@@ -29,7 +29,7 @@ import (
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	cmtcfg "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/p2p"
-	"github.com/cometbft/cometbft/privval"
+	"github.com/cometbft/cometb ft/privval"
 	cmttypes "github.com/cometbft/cometbft/types"
 
 	"nexus/app"
@@ -357,11 +357,8 @@ func StartCmd() *cobra.Command {
 			// Create logger
 			logger := log.NewLogger(cmd.OutOrStdout())
 
-			// Create NEXUS application
-			nexusApp := app.New(logger, db, nil, true, nil)
-
-			// Set chain ID on the app before InitChain
-			nexusApp.SetChainID(genDoc.ChainID)
+			// Create NEXUS application with chain ID
+			nexusApp := app.New(logger, db, nil, true, nil, genDoc.ChainID)
 
 			// Convert ConsensusParams to proto type
 			consensusParamsProto := genDoc.ConsensusParams.ToProto()

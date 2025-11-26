@@ -106,6 +106,7 @@ func New(
 	traceStore io.Writer,
 	loadLatest bool,
 	appOpts servertypes.AppOptions,
+	chainID string,
 	baseAppOptions ...func(*baseapp.BaseApp),
 ) *App {
 	encodingConfig := MakeEncodingConfig()
@@ -114,6 +115,9 @@ func New(
 	cdc := encodingConfig.Codec
 	legacyAmino := encodingConfig.Amino
 	txConfig := encodingConfig.TxConfig
+
+	// Add chain ID to baseapp options
+	baseAppOptions = append(baseAppOptions, baseapp.SetChainID(chainID))
 
 	bApp := baseapp.NewBaseApp(Name, logger, db, txConfig.TxDecoder(), baseAppOptions...)
 	bApp.SetInterfaceRegistry(interfaceRegistry)
