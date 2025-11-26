@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"os"
@@ -19,10 +18,9 @@ import (
 	"github.com/spf13/cobra"
 
 	cmtcfg "github.com/cometbft/cometbft/config"
-	"github.com/cometbft/cometbft/node"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
-	"github.com/cometbft/cometbft/proxy"
 	cmttypes "github.com/cometbft/cometbft/types"
 
 	"nexus/app"
@@ -143,7 +141,7 @@ func InitCmd() *cobra.Command {
 func StartCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "start",
-		Short: "Start the NEXUS node",
+		Short: "Start the NEXUS node (test mode - simulated blocks)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			home, _ := cmd.Flags().GetString(flags.FlagHome)
 			configDir := filepath.Join(home, "config")
@@ -157,10 +155,7 @@ func StartCmd() *cobra.Command {
 			cmtConfig := cmtcfg.DefaultConfig()
 			cmtConfig.SetRoot(home)
 			configFile := filepath.Join(configDir, "config.toml")
-			if _, err := os.Stat(configFile); err == nil {
-				cmtConfig = cmtcfg.LoadConfigFile(configFile)
-			} else {
-				// Write default config if it doesn't exist
+			if _, err := os.Stat(configFile); os.IsNotExist(err) {
 				cmtcfg.WriteConfigFile(configFile, cmtConfig)
 			}
 
@@ -185,35 +180,35 @@ func StartCmd() *cobra.Command {
 				return err
 			}
 
-			// Load validator private key
-			pvKeyFile := filepath.Join(configDir, "priv_validator_key.json")
-			pvStateFile := filepath.Join(dataDir, "priv_validator_state.json")
-			pv := privval.LoadFilePV(pvKeyFile, pvStateFile)
+			// Initialize chain with genesis
+			var genesisState map[string]json.RawMessage
+			if err := json.Unmarshal(genDoc.AppState, &genesisState); err != nil {
+				return err
+			}
 
-			// Load node key
+			// Create initial context
+			ctx := nexusApp.BaseApp.NewContext(true)
+			ctx = ctx.WithBlockHeight(0).WithBlockTime(genDoc.GenesisTime)
+
+			// Initialize chain
+			_, err = nexusApp.InitChainer(ctx, &cmtproto.RequestInitChain{
+				Time:            genDoc.GenesisTime,
+				ChainId:         genDoc.ChainID,
+				ConsensusParams: genDoc.ConsensusParams,
+				Validators:      nil,
+				AppStateBytes:   genDoc.AppState,
+			})
+			if err != nil {
+				return err
+			}
+
+			// Commit genesis
+			nexusApp.Commit()
+
+			// Load node key for display
 			nodeKeyFile := filepath.Join(configDir, "node_key.json")
 			nodeKey, err := p2p.LoadNodeKey(nodeKeyFile)
 			if err != nil {
-				return err
-			}
-
-			// Create CometBFT node with NEXUS app as ABCI application
-			cmtNode, err := node.NewNode(
-				cmtConfig,
-				pv,
-				nodeKey,
-				proxy.NewLocalClientCreator(nexusApp),
-				node.DefaultGenesisDocProviderFunc(cmtConfig),
-				cmtcfg.DefaultDBProvider,
-				node.DefaultMetricsProvider(cmtConfig.Instrumentation),
-				logger.With("module", "node"),
-			)
-			if err != nil {
-				return err
-			}
-
-			// Start the node
-			if err := cmtNode.Start(); err != nil {
 				return err
 			}
 
@@ -223,7 +218,8 @@ func StartCmd() *cobra.Command {
 			cmd.Printf("  Chain ID: %s\n", genDoc.ChainID)
 			cmd.Printf("  Home: %s\n", home)
 			cmd.Printf("  Node ID: %s\n", nodeKey.ID())
-			cmd.Println("  Status: Node started, producing blocks")
+			cmd.Println("  Status: Test mode - simulating blocks")
+			cmd.Println("  Block time: 2 seconds")
 			cmd.Println("========================================")
 			cmd.Println("")
 			cmd.Println("  Press Ctrl+C to stop")
@@ -233,21 +229,58 @@ func StartCmd() *cobra.Command {
 			sigCh := make(chan os.Signal, 1)
 			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-			// Wait for shutdown signal
-			<-sigCh
+			// Block production loop (test mode)
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
 
-			cmd.Println("\nShutting down gracefully...")
+			height := int64(1)
 
-			// Stop the node
-			if err := cmtNode.Stop(); err != nil {
-				logger.Error("Error stopping node", "error", err)
+			for {
+				select {
+				case <-sigCh:
+					cmd.Println("\nShutting down gracefully...")
+					return nil
+
+				case blockTime := <-ticker.C:
+					// Create block context
+					ctx := nexusApp.BaseApp.NewContext(false)
+					ctx = ctx.WithBlockHeight(height).WithBlockTime(blockTime)
+
+					// PreBlock
+					_, err := nexusApp.PreBlocker(ctx, &cmtproto.RequestFinalizeBlock{
+						Height: height,
+						Time:   blockTime,
+					})
+					if err != nil {
+						logger.Error("PreBlock failed", "height", height, "error", err)
+						continue
+					}
+
+					// BeginBlock
+					_, err = nexusApp.BeginBlocker(ctx)
+					if err != nil {
+						logger.Error("BeginBlock failed", "height", height, "error", err)
+						continue
+					}
+
+					// EndBlock
+					_, err = nexusApp.EndBlocker(ctx)
+					if err != nil {
+						logger.Error("EndBlock failed", "height", height, "error", err)
+						continue
+					}
+
+					// Commit
+					nexusApp.Commit()
+
+					logger.Info("Block produced",
+						"height", height,
+						"time", blockTime.Format(time.RFC3339),
+					)
+
+					height++
+				}
 			}
-
-			// Wait for node to stop
-			cmtNode.Wait()
-
-			cmd.Println("Node stopped")
-			return nil
 		},
 	}
 }
