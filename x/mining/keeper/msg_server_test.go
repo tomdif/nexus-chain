@@ -479,3 +479,55 @@ func TestValidatorAddressConversion(t *testing.T) {
 	valAddr3, err := sdk.ValAddressFromBech32(valAddr2.String())
 	t.Logf("Converted back: addr=%v, err=%v", valAddr3, err)
 }
+
+func TestEmissionSchedule(t *testing.T) {
+	k, ctx := setupKeeper(t)
+
+	t.Logf("=== EMISSION SCHEDULE TEST ===")
+
+	// Test epoch calculation
+	epoch := k.GetCurrentEpoch(ctx)
+	t.Logf("Current epoch: %d", epoch)
+
+	// Test emission rate
+	rate := k.GetCurrentEmissionRate(ctx)
+	t.Logf("Current emission rate: %d unex/minute", rate)
+
+	// Expected: Epoch 1 = 100% of base = 35,950,000,000 unex/minute
+	expectedRate := int64(35_950_000_000)
+	if rate != expectedRate {
+		t.Errorf("Expected rate %d, got %d", expectedRate, rate)
+	}
+
+	// Test escrow accumulation
+	initialEscrow := k.GetEmissionEscrow(ctx)
+	t.Logf("Initial escrow: %d", initialEscrow)
+
+	// Simulate processing emissions
+	err := k.ProcessEmissions(ctx)
+	if err != nil {
+		t.Errorf("ProcessEmissions failed: %v", err)
+	}
+
+	t.Logf("Emission schedule verified for Epoch 1")
+}
+
+func TestEmissionEpochs(t *testing.T) {
+	t.Logf("=== EMISSION EPOCHS ===")
+
+	epochs := keeper.GetEmissionEpochs()
+	baseRate := int64(35_950_000_000)
+
+	for i, epoch := range epochs {
+		rate := (baseRate * epoch.RatePercent) / 1000
+		yearStart := (i * 2) + 1
+		yearEnd := yearStart + 1
+		if epoch.EndMinute == -1 {
+			t.Logf("Epoch %d (Year %d+):   %.3f%% = %d unex/min (perpetual)",
+				i+1, yearStart, float64(epoch.RatePercent)/10, rate)
+		} else {
+			t.Logf("Epoch %d (Year %d-%d): %.3f%% = %d unex/min",
+				i+1, yearStart, yearEnd, float64(epoch.RatePercent)/10, rate)
+		}
+	}
+}
