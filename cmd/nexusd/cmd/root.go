@@ -479,7 +479,7 @@ type ABCIWrapper struct {
 
 // Implement abci.Application interface by wrapping BaseApp methods
 
-func (w *ABCIWrapper) Info(req *abci.RequestInfo) (*abci.ResponseInfo, error) {
+func (w *ABCIWrapper) Info(ctx context.Context, req *abci.RequestInfo) (*abci.ResponseInfo, error) {
 	return w.App.Info(req)
 }
 
@@ -491,19 +491,19 @@ func (w *ABCIWrapper) CheckTx(ctx context.Context, req *abci.RequestCheckTx) (*a
 	return w.App.CheckTx(req)
 }
 
-func (w *ABCIWrapper) InitChain(req *abci.RequestInitChain) (*abci.ResponseInitChain, error) {
+func (w *ABCIWrapper) InitChain(ctx context.Context, req *abci.RequestInitChain) (*abci.ResponseInitChain, error) {
 	return w.App.InitChain(req)
 }
 
-func (w *ABCIWrapper) PrepareProposal(req *abci.RequestPrepareProposal) (*abci.ResponsePrepareProposal, error) {
+func (w *ABCIWrapper) PrepareProposal(ctx context.Context, req *abci.RequestPrepareProposal) (*abci.ResponsePrepareProposal, error) {
 	return w.App.PrepareProposal(req)
 }
 
-func (w *ABCIWrapper) ProcessProposal(req *abci.RequestProcessProposal) (*abci.ResponseProcessProposal, error) {
+func (w *ABCIWrapper) ProcessProposal(ctx context.Context, req *abci.RequestProcessProposal) (*abci.ResponseProcessProposal, error) {
 	return w.App.ProcessProposal(req)
 }
 
-func (w *ABCIWrapper) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.ResponseFinalizeBlock, error) {
+func (w *ABCIWrapper) FinalizeBlock(ctx context.Context, req *abci.RequestFinalizeBlock) (*abci.ResponseFinalizeBlock, error) {
 	return w.App.FinalizeBlock(req)
 }
 
@@ -511,23 +511,23 @@ func (w *ABCIWrapper) ExtendVote(ctx context.Context, req *abci.RequestExtendVot
 	return w.App.ExtendVote(ctx, req)
 }
 
-func (w *ABCIWrapper) VerifyVoteExtension(req *abci.RequestVerifyVoteExtension) (*abci.ResponseVerifyVoteExtension, error) {
+func (w *ABCIWrapper) VerifyVoteExtension(ctx context.Context, req *abci.RequestVerifyVoteExtension) (*abci.ResponseVerifyVoteExtension, error) {
 	return w.App.VerifyVoteExtension(req)
 }
 
-func (w *ABCIWrapper) Commit() (*abci.ResponseCommit, error) {
+func (w *ABCIWrapper) Commit(ctx context.Context, req *abci.RequestCommit) (*abci.ResponseCommit, error) {
 	return w.App.Commit()
 }
 
-func (w *ABCIWrapper) ListSnapshots(req *abci.RequestListSnapshots) (*abci.ResponseListSnapshots, error) {
+func (w *ABCIWrapper) ListSnapshots(ctx context.Context, req *abci.RequestListSnapshots) (*abci.ResponseListSnapshots, error) {
 	return w.App.ListSnapshots(req)
 }
 
-func (w *ABCIWrapper) OfferSnapshot(req *abci.RequestOfferSnapshot) (*abci.ResponseOfferSnapshot, error) {
+func (w *ABCIWrapper) OfferSnapshot(ctx context.Context, req *abci.RequestOfferSnapshot) (*abci.ResponseOfferSnapshot, error) {
 	return w.App.OfferSnapshot(req)
 }
 
-func (w *ABCIWrapper) LoadSnapshotChunk(req *abci.RequestLoadSnapshotChunk) (*abci.ResponseLoadSnapshotChunk, error) {
+func (w *ABCIWrapper) LoadSnapshotChunk(ctx context.Context, req *abci.RequestLoadSnapshotChunk) (*abci.ResponseLoadSnapshotChunk, error) {
 	return w.App.LoadSnapshotChunk(req)
 }
 
