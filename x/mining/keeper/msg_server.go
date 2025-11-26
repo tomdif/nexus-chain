@@ -44,7 +44,7 @@ type VerifyResponse struct {
 // VerifierURL is the address of the Nova verification service
 const VerifierURL = "http://localhost:3000/verify"
 
-// PostJob creates a new mining job
+// PostJob creates a new mining job and escrows the reward
 func (k msgServer) PostJob(goCtx context.Context, msg *types.MsgPostJob) (*types.MsgPostJobResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
@@ -55,6 +55,21 @@ func (k msgServer) PostJob(goCtx context.Context, msg *types.MsgPostJob) (*types
 	var rewardAmount int64
 	if len(msg.Reward) > 0 {
 		rewardAmount = msg.Reward[0].Amount.Int64()
+	}
+
+	// Escrow reward from customer to module account
+	if k.bankKeeper != nil && len(msg.Reward) > 0 {
+		customerAddr, err := sdk.AccAddressFromBech32(msg.Customer)
+		if err != nil {
+			return nil, types.ErrInvalidJob
+		}
+		
+		err = k.bankKeeper.SendCoinsFromAccountToModule(ctx, customerAddr, types.ModuleName, msg.Reward)
+		if err != nil {
+			return nil, fmt.Errorf("failed to escrow reward: %w", err)
+		}
+		
+		ctx.Logger().Info("Escrowed job reward", "job_id", jobID, "amount", msg.Reward.String())
 	}
 
 	job := types.Job{
@@ -81,6 +96,7 @@ func (k msgServer) PostJob(goCtx context.Context, msg *types.MsgPostJob) (*types
 			sdk.NewAttribute("job_id", jobID),
 			sdk.NewAttribute("customer", msg.Customer),
 			sdk.NewAttribute("threshold", fmt.Sprintf("%d", msg.Threshold)),
+			sdk.NewAttribute("reward", fmt.Sprintf("%d", rewardAmount)),
 		),
 	)
 
@@ -205,7 +221,7 @@ func (k msgServer) verifyNovaProof(msg *types.MsgSubmitProof, job types.Job) (bo
 	return verifyResp.Valid && verifyResp.MeetsThreshold, nil
 }
 
-// ClaimRewards allows miners to claim their earned rewards
+// ClaimRewards allows miners to claim their earned rewards with actual token transfer
 func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimRewards) (*types.MsgClaimRewardsResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
@@ -229,8 +245,23 @@ func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimReward
 	minerPercent := int64(params.MinerSharePercent)
 
 	minerReward := (shares * job.Reward * minerPercent) / (job.TotalShares * 100)
-
 	rewardCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", minerReward))
+
+	// Transfer tokens from module to claimer
+	if k.bankKeeper != nil && minerReward > 0 {
+		err = k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, claimerAddr, rewardCoins)
+		if err != nil {
+			return nil, fmt.Errorf("failed to transfer reward: %w", err)
+		}
+		
+		ctx.Logger().Info("Transferred mining reward", 
+			"job_id", msg.JobId, 
+			"claimer", msg.Claimer, 
+			"amount", rewardCoins.String(),
+			"shares", shares,
+			"total_shares", job.TotalShares,
+		)
+	}
 
 	// Clear shares to mark as claimed
 	k.SetShares(ctx, claimerAddr, msg.JobId, 0)
@@ -241,13 +272,14 @@ func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimReward
 			sdk.NewAttribute("job_id", msg.JobId),
 			sdk.NewAttribute("claimer", msg.Claimer),
 			sdk.NewAttribute("amount", rewardCoins.String()),
+			sdk.NewAttribute("shares", fmt.Sprintf("%d", shares)),
 		),
 	)
 
 	return &types.MsgClaimRewardsResponse{Amount: rewardCoins}, nil
 }
 
-// CancelJob allows the customer to cancel an unworked job
+// CancelJob allows the customer to cancel an unworked job and refund the reward
 func (k msgServer) CancelJob(goCtx context.Context, msg *types.MsgCancelJob) (*types.MsgCancelJobResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
@@ -263,6 +295,22 @@ func (k msgServer) CancelJob(goCtx context.Context, msg *types.MsgCancelJob) (*t
 	// Can only cancel if no shares have been earned
 	if job.TotalShares > 0 {
 		return nil, types.ErrCannotCancel
+	}
+
+	// Refund reward to customer
+	if k.bankKeeper != nil && job.Reward > 0 {
+		customerAddr, err := sdk.AccAddressFromBech32(msg.Customer)
+		if err != nil {
+			return nil, types.ErrUnauthorized
+		}
+		
+		refundCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", job.Reward))
+		err = k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, customerAddr, refundCoins)
+		if err != nil {
+			return nil, fmt.Errorf("failed to refund: %w", err)
+		}
+		
+		ctx.Logger().Info("Refunded cancelled job", "job_id", msg.JobId, "amount", refundCoins.String())
 	}
 
 	job.Status = types.JobStatusCancelled
