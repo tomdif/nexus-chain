@@ -259,7 +259,9 @@ func (k msgServer) verifyNovaProof(msg *types.MsgSubmitProof, job types.Job) (bo
 	return verifyResp.Valid && verifyResp.MeetsThreshold, nil
 }
 
+
 // ClaimRewards allows miners to claim their earned rewards with actual token transfer
+// Rewards include: customer payment (80/20 split) + emission reward (time-based, 80/20 split)
 // Validator share remains in module for later distribution to validators
 func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimRewards) (*types.MsgClaimRewardsResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
@@ -279,51 +281,44 @@ func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimReward
 		return nil, types.ErrNoShares
 	}
 
-	// Calculate reward distribution:
-	// - MinerSharePercent (80%) goes to miner
-	// - ValidatorSharePercent (20%) stays in module for validator distribution
 	params := k.GetParams(ctx)
 	minerPercent := int64(params.MinerSharePercent)
 
-	// Miner's proportional share of the reward pool
+	// === CUSTOMER REWARD (from escrowed job payment) ===
 	minerProportionalReward := (shares * job.Reward) / job.TotalShares
+	customerMinerReward := (minerProportionalReward * minerPercent) / 100
+	customerValidatorShare := minerProportionalReward - customerMinerReward
 
-	// Apply miner percentage (80%)
-	minerReward := (minerProportionalReward * minerPercent) / 100
+	// === EMISSION REWARD (time-based: minutes_to_solve * emission_rate) ===
+	emissionReward := k.ClaimEmissionReward(ctx, job)
+	emissionMinerReward := (emissionReward * minerPercent) / 100
+	emissionValidatorShare := emissionReward - emissionMinerReward
 
-	// Validator share (20%) - stays in module for later distribution
-	validatorShare := minerProportionalReward - minerReward
+	// === TOTALS ===
+	totalMinerReward := customerMinerReward + emissionMinerReward
+	totalValidatorShare := customerValidatorShare + emissionValidatorShare
 
-	rewardCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", minerReward))
+	rewardCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", totalMinerReward))
 
 	// Transfer tokens from module to miner
-	if k.bankKeeper != nil && minerReward > 0 {
+	if k.bankKeeper != nil && totalMinerReward > 0 {
 		err = k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, claimerAddr, rewardCoins)
 		if err != nil {
 			return nil, fmt.Errorf("failed to transfer reward: %w", err)
 		}
 
-		ctx.Logger().Info("Transferred mining reward",
+		ctx.Logger().Info("Mining reward claimed",
 			"job_id", msg.JobId,
 			"claimer", msg.Claimer,
-			"miner_reward", rewardCoins.String(),
-			"validator_share_held", validatorShare,
-			"shares", shares,
-			"total_shares", job.TotalShares,
+			"customer_reward", customerMinerReward,
+			"emission_reward", emissionMinerReward,
+			"total_miner_reward", totalMinerReward,
+			"validator_share", totalValidatorShare,
 		)
 	}
 
 	// Add validator share to reward pool for checkpoint distribution
-	k.AddToValidatorRewardPool(ctx, validatorShare)
-	if validatorShare > 0 {
-		ctx.EventManager().EmitEvent(
-			sdk.NewEvent(
-				"validator_share_accrued",
-				sdk.NewAttribute("job_id", msg.JobId),
-				sdk.NewAttribute("amount", fmt.Sprintf("%d", validatorShare)),
-			),
-		)
-	}
+	k.AddToValidatorRewardPool(ctx, totalValidatorShare)
 
 	// Clear shares to mark as claimed
 	k.SetShares(ctx, claimerAddr, msg.JobId, 0)
@@ -333,16 +328,15 @@ func (k msgServer) ClaimRewards(goCtx context.Context, msg *types.MsgClaimReward
 			"rewards_claimed",
 			sdk.NewAttribute("job_id", msg.JobId),
 			sdk.NewAttribute("claimer", msg.Claimer),
-			sdk.NewAttribute("miner_reward", rewardCoins.String()),
-			sdk.NewAttribute("validator_share", fmt.Sprintf("%d", validatorShare)),
-			sdk.NewAttribute("shares", fmt.Sprintf("%d", shares)),
+			sdk.NewAttribute("customer_miner_reward", fmt.Sprintf("%d", customerMinerReward)),
+			sdk.NewAttribute("emission_miner_reward", fmt.Sprintf("%d", emissionMinerReward)),
+			sdk.NewAttribute("total_miner_reward", fmt.Sprintf("%d", totalMinerReward)),
+			sdk.NewAttribute("validator_share", fmt.Sprintf("%d", totalValidatorShare)),
 		),
 	)
 
 	return &types.MsgClaimRewardsResponse{Amount: rewardCoins}, nil
 }
-
-// CancelJob allows the customer to cancel an unworked job and refund the reward
 func (k msgServer) CancelJob(goCtx context.Context, msg *types.MsgCancelJob) (*types.MsgCancelJobResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 

@@ -182,7 +182,7 @@ func (k Keeper) ProcessEmissions(ctx sdk.Context) error {
 
 	// Mint new tokens to module account
 	if k.bankKeeper != nil && emissionsToAdd > 0 {
-		emissionCoins := sdk.NewCoins(sdk.NewInt64Coin("unex", emissionsToAdd))
+		emissionCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", emissionsToAdd))
 		err := k.bankKeeper.MintCoins(ctx, types.ModuleName, emissionCoins)
 		if err != nil {
 			k.Logger(ctx).Error("Failed to mint emission coins", "error", err)
