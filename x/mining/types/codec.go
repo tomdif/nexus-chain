@@ -12,6 +12,7 @@ func RegisterCodec(cdc *codec.LegacyAmino) {
 	legacy.RegisterAminoMsg(cdc, &MsgSubmitProof{}, "nexus/MsgSubmitProof")
 	legacy.RegisterAminoMsg(cdc, &MsgClaimRewards{}, "nexus/MsgClaimRewards")
 	legacy.RegisterAminoMsg(cdc, &MsgCancelJob{}, "nexus/MsgCancelJob")
+	legacy.RegisterAminoMsg(cdc, &MsgSubmitPublicJob{}, "nexus/MsgSubmitPublicJob")
 }
 
 func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
@@ -20,6 +21,7 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&MsgSubmitProof{},
 		&MsgClaimRewards{},
 		&MsgCancelJob{},
+		&MsgSubmitPublicJob{},
 	)
 }
 
