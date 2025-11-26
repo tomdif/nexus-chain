@@ -18,7 +18,6 @@ import (
 )
 
 func init() {
-	// Configure SDK with nexus bech32 prefix
 	config := sdk.GetConfig()
 	config.SetBech32PrefixForAccount("nexus", "nexuspub")
 	config.SetBech32PrefixForValidator("nexusvaloper", "nexusvaloperpub")
@@ -27,6 +26,10 @@ func init() {
 }
 
 func setupKeeper(t *testing.T) (keeper.Keeper, sdk.Context) {
+	return setupKeeperWithBank(t, nil)
+}
+
+func setupKeeperWithBank(t *testing.T, bankKeeper types.BankKeeper) (keeper.Keeper, sdk.Context) {
 	storeKey := storetypes.NewKVStoreKey(types.StoreKey)
 	memKey := storetypes.NewMemoryStoreKey("mem_mining")
 
@@ -43,18 +46,24 @@ func setupKeeper(t *testing.T) (keeper.Keeper, sdk.Context) {
 
 	ctx := sdk.NewContext(stateStore, cmtproto.Header{Height: 1}, false, log.NewNopLogger())
 
-	k := keeper.NewKeeper(cdc, storeKey, memKey, nil, nil, "authority")
+	k := keeper.NewKeeper(cdc, storeKey, memKey, nil, bankKeeper, "authority")
 	k.SetParams(ctx, types.DefaultParams())
 
 	return k, ctx
 }
+
+// Test addresses - these are valid bech32 addresses
+const (
+	testCustomer = "nexus1w8n0qfhyu4ywufc9dpe2mpx48kyz4lhzl292wg"
+	testMiner    = "nexus109vzpgxnm8mjye50yaf4vj8yp59he3aclran4g"
+)
 
 func TestPostJob(t *testing.T) {
 	k, ctx := setupKeeper(t)
 	msgServer := keeper.NewMsgServerImpl(k)
 
 	msg := &types.MsgPostJob{
-		Customer:    "nexus1w8n0qfhyu4ywufc9dpe2mpx48kyz4lhzl292wg",
+		Customer:    testCustomer,
 		ProblemHash: "0000000000000000000000000000000000000000000000000000000000000001",
 		Threshold:   -100,
 		Reward:      sdk.NewCoins(sdk.NewInt64Coin("unexus", 1000000)),
@@ -81,7 +90,7 @@ func TestSubmitProofWithVerifier(t *testing.T) {
 	msgServer := keeper.NewMsgServerImpl(k)
 
 	postMsg := &types.MsgPostJob{
-		Customer:    "nexus1w8n0qfhyu4ywufc9dpe2mpx48kyz4lhzl292wg",
+		Customer:    testCustomer,
 		ProblemHash: "0000000000000000000000000000000000000000000000000000000000000001",
 		Threshold:   -100,
 		Reward:      sdk.NewCoins(sdk.NewInt64Coin("unexus", 1000000)),
@@ -97,7 +106,7 @@ func TestSubmitProofWithVerifier(t *testing.T) {
 	proofBytes := []byte{0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef}
 	
 	submitMsg := &types.MsgSubmitProof{
-		Miner:        "nexus1w8n0qfhyu4ywufc9dpe2mpx48kyz4lhzl292wg",
+		Miner:        testCustomer,
 		JobId:        postResp.JobId,
 		Energy:       -150,
 		Proof:        proofBytes,
@@ -125,7 +134,7 @@ func TestUniversalShareFormulaWithVerifier(t *testing.T) {
 	msgServer := keeper.NewMsgServerImpl(k)
 
 	postMsg := &types.MsgPostJob{
-		Customer:    "nexus1w8n0qfhyu4ywufc9dpe2mpx48kyz4lhzl292wg",
+		Customer:    testCustomer,
 		ProblemHash: "0000000000000000000000000000000000000000000000000000000000000001",
 		Threshold:   1000,
 		Reward:      sdk.NewCoins(sdk.NewInt64Coin("unexus", 1000000)),
@@ -142,7 +151,7 @@ func TestUniversalShareFormulaWithVerifier(t *testing.T) {
 
 	// First proof: energy=-500 -> bootstrap shares = abs(-500) = 500
 	submit1 := &types.MsgSubmitProof{
-		Miner:        "nexus1w8n0qfhyu4ywufc9dpe2mpx48kyz4lhzl292wg",
+		Miner:        testCustomer,
 		JobId:        postResp.JobId,
 		Energy:       -500,
 		Proof:        proofBytes,
@@ -158,7 +167,7 @@ func TestUniversalShareFormulaWithVerifier(t *testing.T) {
 
 	// Second proof: energy=-700 -> improvement = -500 - (-700) = 200 shares
 	submit2 := &types.MsgSubmitProof{
-		Miner:        "nexus1w8n0qfhyu4ywufc9dpe2mpx48kyz4lhzl292wg",
+		Miner:        testCustomer,
 		JobId:        postResp.JobId,
 		Energy:       -700,
 		Proof:        proofBytes,
@@ -174,7 +183,7 @@ func TestUniversalShareFormulaWithVerifier(t *testing.T) {
 
 	// Third proof: energy=-650 (worse than -700) -> 0 shares
 	submit3 := &types.MsgSubmitProof{
-		Miner:        "nexus1w8n0qfhyu4ywufc9dpe2mpx48kyz4lhzl292wg",
+		Miner:        testCustomer,
 		JobId:        postResp.JobId,
 		Energy:       -650,
 		Proof:        proofBytes,
@@ -222,4 +231,279 @@ func TestUniversalShareFormulaWithVerifier(t *testing.T) {
 	}
 
 	t.Logf("=== UNIVERSAL SHARE FORMULA VERIFIED WITH NOVA VERIFIER ===")
+}
+
+// ========================================
+// BANK KEEPER TESTS
+// ========================================
+
+func TestPostJobWithEscrow(t *testing.T) {
+	bankKeeper := NewMockBankKeeper()
+	k, ctx := setupKeeperWithBank(t, bankKeeper)
+	msgServer := keeper.NewMsgServerImpl(k)
+
+	customerAddr, _ := sdk.AccAddressFromBech32(testCustomer)
+	
+	// Give customer initial balance
+	initialBalance := sdk.NewCoins(sdk.NewInt64Coin("unexus", 10000000))
+	bankKeeper.SetBalance(customerAddr, initialBalance)
+
+	t.Logf("Customer initial balance: %s", initialBalance)
+
+	reward := sdk.NewCoins(sdk.NewInt64Coin("unexus", 1000000))
+	msg := &types.MsgPostJob{
+		Customer:    testCustomer,
+		ProblemHash: "0000000000000000000000000000000000000000000000000000000000000001",
+		Threshold:   1000,
+		Reward:      reward,
+		Duration:    100,
+	}
+
+	resp, err := msgServer.PostJob(sdk.WrapSDKContext(ctx), msg)
+	if err != nil {
+		t.Fatalf("PostJob failed: %v", err)
+	}
+	t.Logf("Created job: %s", resp.JobId)
+
+	// Verify customer balance decreased
+	customerBalance := bankKeeper.Balances[customerAddr.String()]
+	expectedBalance := sdk.NewCoins(sdk.NewInt64Coin("unexus", 9000000))
+	if !customerBalance.Equal(expectedBalance) {
+		t.Errorf("Customer balance: expected %s, got %s", expectedBalance, customerBalance)
+	} else {
+		t.Logf("✓ Customer balance decreased: %s", customerBalance)
+	}
+
+	// Verify module received the escrow
+	moduleBalance := bankKeeper.ModuleBalances[types.ModuleName]
+	if !moduleBalance.Equal(reward) {
+		t.Errorf("Module balance: expected %s, got %s", reward, moduleBalance)
+	} else {
+		t.Logf("✓ Module received escrow: %s", moduleBalance)
+	}
+}
+
+func TestClaimRewardsWithTransfer(t *testing.T) {
+	bankKeeper := NewMockBankKeeper()
+	k, ctx := setupKeeperWithBank(t, bankKeeper)
+	msgServer := keeper.NewMsgServerImpl(k)
+
+	customerAddr, _ := sdk.AccAddressFromBech32(testCustomer)
+	minerAddr, _ := sdk.AccAddressFromBech32(testMiner)
+
+	// Setup: Customer has balance, posts job
+	bankKeeper.SetBalance(customerAddr, sdk.NewCoins(sdk.NewInt64Coin("unexus", 10000000)))
+
+	reward := sdk.NewCoins(sdk.NewInt64Coin("unexus", 1000000))
+	postMsg := &types.MsgPostJob{
+		Customer:    testCustomer,
+		ProblemHash: "0000000000000000000000000000000000000000000000000000000000000001",
+		Threshold:   1000,
+		Reward:      reward,
+		Duration:    100,
+	}
+
+	postResp, _ := msgServer.PostJob(sdk.WrapSDKContext(ctx), postMsg)
+	t.Logf("Created job: %s", postResp.JobId)
+	t.Logf("Module balance after escrow: %s", bankKeeper.ModuleBalances[types.ModuleName])
+
+	// Miner submits proof
+	proofBytes := []byte{0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef}
+	submitMsg := &types.MsgSubmitProof{
+		Miner:        testMiner,
+		JobId:        postResp.JobId,
+		Energy:       -500,
+		Proof:        proofBytes,
+		SolutionHash: "0000000000000000000000000000000000000000000000000000000000000002",
+	}
+
+	submitResp, err := msgServer.SubmitProof(sdk.WrapSDKContext(ctx), submitMsg)
+	if err != nil {
+		t.Fatalf("SubmitProof failed: %v", err)
+	}
+	t.Logf("Miner earned %d shares", submitResp.SharesEarned)
+
+	// Miner claims rewards
+	claimMsg := &types.MsgClaimRewards{
+		Claimer: testMiner,
+		JobId:   postResp.JobId,
+	}
+
+	claimResp, err := msgServer.ClaimRewards(sdk.WrapSDKContext(ctx), claimMsg)
+	if err != nil {
+		t.Fatalf("ClaimRewards failed: %v", err)
+	}
+	t.Logf("Miner claimed: %s", claimResp.Amount)
+
+	// Verify miner received tokens
+	minerBalance := bankKeeper.Balances[minerAddr.String()]
+	t.Logf("Miner balance after claim: %s", minerBalance)
+
+	if minerBalance.IsZero() {
+		t.Error("Miner should have received tokens")
+	} else {
+		t.Logf("✓ Miner received reward: %s", minerBalance)
+	}
+
+	// Verify module balance decreased
+	moduleBalance := bankKeeper.ModuleBalances[types.ModuleName]
+	t.Logf("Module balance after claim: %s", moduleBalance)
+}
+
+func TestCancelJobWithRefund(t *testing.T) {
+	bankKeeper := NewMockBankKeeper()
+	k, ctx := setupKeeperWithBank(t, bankKeeper)
+	msgServer := keeper.NewMsgServerImpl(k)
+
+	customerAddr, _ := sdk.AccAddressFromBech32(testCustomer)
+	
+	// Customer starts with 10M
+	initialBalance := sdk.NewCoins(sdk.NewInt64Coin("unexus", 10000000))
+	bankKeeper.SetBalance(customerAddr, initialBalance)
+
+	reward := sdk.NewCoins(sdk.NewInt64Coin("unexus", 1000000))
+	postMsg := &types.MsgPostJob{
+		Customer:    testCustomer,
+		ProblemHash: "0000000000000000000000000000000000000000000000000000000000000001",
+		Threshold:   1000,
+		Reward:      reward,
+		Duration:    100,
+	}
+
+	postResp, _ := msgServer.PostJob(sdk.WrapSDKContext(ctx), postMsg)
+	t.Logf("Created job: %s", postResp.JobId)
+
+	// Verify escrow happened
+	balanceAfterPost := bankKeeper.Balances[customerAddr.String()]
+	t.Logf("Customer balance after post: %s", balanceAfterPost)
+
+	// Cancel the job (no work done)
+	cancelMsg := &types.MsgCancelJob{
+		Customer: testCustomer,
+		JobId:    postResp.JobId,
+	}
+
+	cancelResp, err := msgServer.CancelJob(sdk.WrapSDKContext(ctx), cancelMsg)
+	if err != nil {
+		t.Fatalf("CancelJob failed: %v", err)
+	}
+	t.Logf("Job cancelled: %v", cancelResp.Success)
+
+	// Verify refund
+	balanceAfterCancel := bankKeeper.Balances[customerAddr.String()]
+	if !balanceAfterCancel.Equal(initialBalance) {
+		t.Errorf("Customer should have full refund: expected %s, got %s", initialBalance, balanceAfterCancel)
+	} else {
+		t.Logf("✓ Customer refunded: %s", balanceAfterCancel)
+	}
+
+	// Verify module is empty
+	moduleBalance := bankKeeper.ModuleBalances[types.ModuleName]
+	if !moduleBalance.IsZero() {
+		t.Errorf("Module should be empty after refund, got: %s", moduleBalance)
+	} else {
+		t.Logf("✓ Module balance is zero after refund")
+	}
+}
+
+func TestInsufficientFundsForJob(t *testing.T) {
+	bankKeeper := NewMockBankKeeper()
+	k, ctx := setupKeeperWithBank(t, bankKeeper)
+	msgServer := keeper.NewMsgServerImpl(k)
+
+	customerAddr, _ := sdk.AccAddressFromBech32(testCustomer)
+	
+	// Customer has only 100 tokens
+	bankKeeper.SetBalance(customerAddr, sdk.NewCoins(sdk.NewInt64Coin("unexus", 100)))
+
+	// Try to post job with 1M reward
+	reward := sdk.NewCoins(sdk.NewInt64Coin("unexus", 1000000))
+	msg := &types.MsgPostJob{
+		Customer:    testCustomer,
+		ProblemHash: "0000000000000000000000000000000000000000000000000000000000000001",
+		Threshold:   1000,
+		Reward:      reward,
+		Duration:    100,
+	}
+
+	_, err := msgServer.PostJob(sdk.WrapSDKContext(ctx), msg)
+	if err == nil {
+		t.Error("Expected error for insufficient funds")
+	} else {
+		t.Logf("✓ Correctly rejected: %v", err)
+	}
+}
+
+func TestFullMiningFlowWithTokens(t *testing.T) {
+	bankKeeper := NewMockBankKeeper()
+	k, ctx := setupKeeperWithBank(t, bankKeeper)
+	msgServer := keeper.NewMsgServerImpl(k)
+
+	customerAddr, _ := sdk.AccAddressFromBech32(testCustomer)
+	minerAddr, _ := sdk.AccAddressFromBech32(testMiner)
+
+	// Setup initial balances
+	bankKeeper.SetBalance(customerAddr, sdk.NewCoins(sdk.NewInt64Coin("unexus", 10000000)))
+	bankKeeper.SetBalance(minerAddr, sdk.NewCoins(sdk.NewInt64Coin("unexus", 0)))
+
+	t.Logf("=== INITIAL STATE ===")
+	t.Logf("Customer: %s", bankKeeper.Balances[customerAddr.String()])
+	t.Logf("Miner: %s", bankKeeper.Balances[minerAddr.String()])
+
+	// 1. Customer posts job
+	reward := sdk.NewCoins(sdk.NewInt64Coin("unexus", 1000000))
+	postResp, _ := msgServer.PostJob(sdk.WrapSDKContext(ctx), &types.MsgPostJob{
+		Customer:    testCustomer,
+		ProblemHash: "0000000000000000000000000000000000000000000000000000000000000001",
+		Threshold:   1000,
+		Reward:      reward,
+		Duration:    100,
+	})
+	
+	t.Logf("\n=== AFTER POST JOB ===")
+	t.Logf("Customer: %s", bankKeeper.Balances[customerAddr.String()])
+	t.Logf("Module: %s", bankKeeper.ModuleBalances[types.ModuleName])
+
+	// 2. Miner submits proof
+	proofBytes := []byte{0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef}
+	submitResp, _ := msgServer.SubmitProof(sdk.WrapSDKContext(ctx), &types.MsgSubmitProof{
+		Miner:        testMiner,
+		JobId:        postResp.JobId,
+		Energy:       -500,
+		Proof:        proofBytes,
+		SolutionHash: "0000000000000000000000000000000000000000000000000000000000000002",
+	})
+	
+	t.Logf("\n=== AFTER SUBMIT PROOF ===")
+	t.Logf("Miner earned %d shares", submitResp.SharesEarned)
+	job, _ := k.GetJob(ctx, postResp.JobId)
+	t.Logf("Job total shares: %d", job.TotalShares)
+
+	// 3. Miner claims reward
+	claimResp, _ := msgServer.ClaimRewards(sdk.WrapSDKContext(ctx), &types.MsgClaimRewards{
+		Claimer: testMiner,
+		JobId:   postResp.JobId,
+	})
+	
+	t.Logf("\n=== AFTER CLAIM REWARDS ===")
+	t.Logf("Miner claimed: %s", claimResp.Amount)
+	t.Logf("Customer: %s", bankKeeper.Balances[customerAddr.String()])
+	t.Logf("Miner: %s", bankKeeper.Balances[minerAddr.String()])
+	t.Logf("Module: %s", bankKeeper.ModuleBalances[types.ModuleName])
+
+	// Verify final state
+	t.Logf("\n=== VERIFICATION ===")
+	
+	minerFinal := bankKeeper.Balances[minerAddr.String()]
+	if minerFinal.AmountOf("unexus").IsPositive() {
+		t.Logf("✓ Miner received tokens: %s", minerFinal)
+	} else {
+		t.Errorf("Miner should have tokens, got: %s", minerFinal)
+	}
+
+	customerFinal := bankKeeper.Balances[customerAddr.String()]
+	expectedCustomer := sdk.NewCoins(sdk.NewInt64Coin("unexus", 9000000))
+	if customerFinal.Equal(expectedCustomer) {
+		t.Logf("✓ Customer paid for job: %s", customerFinal)
+	}
 }
