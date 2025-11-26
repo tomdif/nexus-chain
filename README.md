@@ -1,211 +1,208 @@
-# NEXUS Chain
+# NEXUS Network
 
-A Cosmos SDK blockchain with Proof-of-Useful-Work mining.
+**Bitcoin, but useful.** A proof-of-useful-work blockchain where validators solve real optimization problems instead of wasteful hash puzzles.
 
-> **Note:** This is a development scaffold. Chain name, token name, and economics are all placeholders that can be changed before mainnet.
+## Overview
 
-## Architecture
+NEXUS replaces Bitcoin's SHA-256 mining with Ising model optimization - the same mathematical framework used for protein folding, drug discovery, and logistics optimization. Miners submit zero-knowledge proofs (Nova/Halo2) that verify their computational work without revealing solutions.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    NEXUS Network                            │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  Fast Layer (PoS)              Slow Layer (PoUW)           │
-│  ├─ 2-second blocks            ├─ 10-minute checkpoints    │
-│  ├─ BFT validators             ├─ Miners solve problems    │
-│  ├─ Instant finality           ├─ ZK proof verification    │
-│  └─ Handles transactions       └─ Deep finality            │
-│                                                             │
-│  x/mining module:                                           │
-│  ├─ Job posting (MsgPostJob)                               │
-│  ├─ Proof submission (MsgSubmitProof)                      │
-│  ├─ Universal share formula                                │
-│  ├─ Checkpoint management                                  │
-│  └─ Validator mining requirements                          │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
+## Key Features
 
-## Prerequisites
-
-- Go 1.22+
-- Make
-- Git
+- **Proof of Useful Work**: Solve real-world optimization problems
+- **Zero-Knowledge Proofs**: Nova recursive SNARKs verify work in ~10 seconds
+- **20-Year Emission Schedule**: 75B NEX distributed to miners
+- **Dual Fee Burn**: 2% job fees + 50% transaction fees burned
+- **80/20 Split**: Miners get 80%, validators get 20%
+- **2-Second Finality**: CometBFT consensus with instant finality
 
 ## Quick Start
 
+### Prerequisites
+
+- Go 1.22+
+- jq
+
+### Build
 ```bash
-# Clone
-git clone https://github.com/nexus-chain/nexus
-cd nexus
-
-# Build
-make build
-
-# Initialize local testnet
-chmod +x scripts/init.sh
-./scripts/init.sh
-
-# Start the chain
-./build/nexusd start
+git clone https://github.com/tomdif/nexus-chain.git
+cd nexus-chain
+go build -o nexusd ./cmd/nexusd/
 ```
 
-## Project Structure
-
-```
-nexus-chain/
-├── app/                    # Main application
-├── cmd/nexusd/            # Binary entry point
-├── x/mining/              # Mining module (core logic)
-│   ├── keeper/            # State management
-│   │   ├── keeper.go      # Core business logic
-│   │   ├── msg_server.go  # Transaction handlers
-│   │   └── abci.go        # Block-level hooks
-│   ├── types/             # Data structures
-│   │   ├── types.go       # Core types (Job, Proof, etc.)
-│   │   ├── msgs.go        # Transaction messages
-│   │   ├── params.go      # Configurable parameters
-│   │   ├── errors.go      # Error definitions
-│   │   └── genesis.go     # Genesis state
-│   └── module.go          # AppModule interface
-├── scripts/               # Helper scripts
-├── Makefile              # Build commands
-└── go.mod                # Dependencies
+### Run Single Node
+```bash
+./nexusd init my-validator
+./nexusd start
 ```
 
-## Mining Module
-
-### Core Types
-
-- **Job**: Optimization problem posted by customers
-- **MiningProof**: ZK proof submission from miners
-- **Checkpoint**: 10-minute mining checkpoint
-- **ValidatorMiningRecord**: Tracks validator's mining activity
-
-### Messages (Transactions)
-
-| Message | Description | Who |
-|---------|-------------|-----|
-| `MsgPostJob` | Post optimization problem with reward | Customer |
-| `MsgSubmitProof` | Submit solution with ZK proof | Miner |
-| `MsgClaimRewards` | Claim earned rewards | Miner |
-| `MsgCancelJob` | Cancel job (if no solutions) | Customer |
-
-### Universal Share Formula
-
-```
-shares = max(0, previous_best_objective − your_objective)
+### Run 3-Node Testnet
+```bash
+./scripts/testnet.sh      # Initialize
+./scripts/start-testnet.sh # Start all nodes
+./scripts/stop-testnet.sh  # Stop all nodes
 ```
 
-- Hardware-agnostic (GPU, CPU, quantum all use same formula)
-- Outcome-based (rewards improvement, not effort)
-- Ungameable (must actually improve solution)
+## CLI Commands
 
-### Parameters (Configurable)
+### Transactions
+```bash
+# Post a paid optimization job
+nexusd tx mining post-job <problem-hash> <threshold> <reward> --priority-fee 100000
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `MinerSharePercent` | 80% | Portion of rewards to miners |
-| `ValidatorSharePercent` | 20% | Portion of rewards to validators |
-| `CheckpointInterval` | 300 blocks | ~10 min at 2s blocks |
-| `MinProofPeriod` | 1 week | Validators must mine this often |
-| `JobFeeBurnPercent` | 2% | Burned from job rewards |
-| `TxFeeBurnPercent` | 50% | Burned from tx fees |
+# Submit proof for a job
+nexusd tx mining submit-proof <job-id> <solution-hash> <energy> <proof-base64>
+
+# Submit free public research job
+nexusd tx mining submit-public-job <title> <category> <hash> <threshold> <ipfs-cid>
+
+# Claim mining rewards
+nexusd tx mining claim-rewards <job-id>
+
+# Cancel job and get refund
+nexusd tx mining cancel-job <job-id>
+```
+
+### Queries
+```bash
+nexusd query mining get-job <job-id>
+nexusd query mining list-jobs
+nexusd query mining get-miner <address>
+nexusd query mining get-params
+nexusd query mining get-active-job
+nexusd query mining get-queue-status
+nexusd query mining get-emission-info
+```
+
+## Architecture
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      NEXUS Network                          │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │   Mining    │  │   Staking   │  │   Bank (NEX Token)  │  │
+│  │   Module    │  │   Module    │  │      Module         │  │
+│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘  │
+│         │                │                     │             │
+│  ┌──────▼────────────────▼─────────────────────▼──────────┐ │
+│  │                    Cosmos SDK v0.50                    │ │
+│  └────────────────────────┬───────────────────────────────┘ │
+│                           │                                  │
+│  ┌────────────────────────▼───────────────────────────────┐ │
+│  │                  CometBFT v0.38.9                      │ │
+│  │            (Byzantine Fault Tolerant Consensus)        │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Tokenomics
+
+| Parameter | Value |
+|-----------|-------|
+| Token | NEX |
+| Denomination | unexus (1 NEX = 1,000,000 unexus) |
+| Total Supply | 100B NEX |
+| Initial Allocation | 25B NEX (founders/treasury) |
+| Mining Emissions | 75B NEX over 20+ years |
+| Job Fee Burn | 2% |
+| Transaction Fee Burn | 50% |
+
+### Emission Schedule
+
+| Years | Rate (NEX/min) | % of Max |
+|-------|----------------|----------|
+| 1-2 | 35,950 | 100% |
+| 3-4 | 17,975 | 50% |
+| 5-6 | 8,988 | 25% |
+| 7-8 | 4,494 | 12.5% |
+| 9-10 | 2,229 | 6.2% |
+| 11-12 | 1,114 | 3.1% |
+| 13+ | 539 | Perpetual |
+
+## Job System
+
+### Job Types
+
+1. **Paid Jobs**: Customers pay NEX for priority computation
+   - Priority fee determines queue position
+   - Full reward + emission bonus to solver
+
+2. **Public Jobs**: Free research problems (requires stake)
+   - Random selection from queue
+   - Emission rewards only
+
+3. **Synthetic Jobs**: Auto-generated when queues empty
+   - Ising problems from block hash
+   - Keeps miners productive
+
+### Job Flow
+```
+Customer → Post Job → Priority Queue → Active Job → Miner Solves
+                ↓                            ↓
+         2% Fee Burned              ZK Proof Verified
+                                           ↓
+                                    Rewards Distributed
+                                    (80% Miner, 20% Validators)
+```
+
+## ZK Proof Integration
+
+NEXUS uses Nova recursive SNARKs to verify optimization work:
+```
+Miner                          NEXUS Chain
+  │                                 │
+  │  Solve Ising Problem            │
+  │  Generate Nova Proof            │
+  │                                 │
+  │──── Submit Proof ──────────────►│
+  │                                 │
+  │     POST /verify                │
+  │     ┌──────────────────────┐    │
+  │     │ Nova Verifier Service│    │
+  │     │ (localhost:3000)     │    │
+  │     └──────────────────────┘    │
+  │                                 │
+  │◄─── Rewards if Valid ──────────│
+```
+
+## Network Ports
+
+| Node | P2P Port | RPC Port |
+|------|----------|----------|
+| Node 1 | 26656 | 26657 |
+| Node 2 | 26666 | 26667 |
+| Node 3 | 26676 | 26677 |
 
 ## Development
 
-### Build Commands
-
+### Run Tests
 ```bash
-make build          # Build binary
-make install        # Install to GOPATH
-make test           # Run tests
-make lint           # Run linter
-make proto-gen      # Generate protobuf
+go test ./x/mining/keeper/...
 ```
 
-### Testing
-
-```bash
-# Unit tests
-go test ./x/mining/...
-
-# Integration test (requires running chain)
-./scripts/test_mining.sh
+### Project Structure
 ```
-
-## Next Steps
-
-### 1. ZK Verifier Integration
-
-The `VerifyProof` function in `keeper.go` is a placeholder. To integrate your Nova prover:
-
-**Option A: FFI Bridge (Recommended)**
-```go
-// #cgo LDFLAGS: -L./lib -lnova_verifier
-// #include "nova_verifier.h"
-import "C"
-
-func (k Keeper) VerifyProof(...) bool {
-    result := C.verify_nova_proof(
-        C.CBytes(problemHash),
-        C.int64_t(energy),
-        C.CBytes(proof),
-    )
-    return result == 1
-}
+nexus-chain/
+├── app/                    # Application wiring
+│   ├── app.go             # Main app definition
+│   └── ante/              # Transaction preprocessing
+├── cmd/nexusd/            # CLI entry point
+├── scripts/               # Testnet scripts
+├── x/mining/              # Mining module
+│   ├── client/cli/        # CLI commands
+│   ├── keeper/            # State management
+│   │   ├── msg_server.go  # Transaction handlers
+│   │   ├── query_server.go# Query handlers
+│   │   ├── emissions.go   # Emission schedule
+│   │   └── background_jobs.go # Job queues
+│   └── types/             # Type definitions
+└── docs/                  # Documentation
 ```
-
-**Option B: Subprocess**
-```go
-func (k Keeper) VerifyProof(...) bool {
-    cmd := exec.Command("nova-verifier", "--proof", base64.StdEncoding.EncodeToString(proof))
-    return cmd.Run() == nil
-}
-```
-
-### 2. Complete the App Wiring
-
-The `app/app.go` needs to:
-- Register the mining module
-- Wire up keeper dependencies
-- Add to module manager
-
-### 3. Add CLI Commands
-
-Create CLI commands in `x/mining/client/cli/` for:
-- `nexusd tx mining post-job`
-- `nexusd tx mining submit-proof`
-- `nexusd query mining job`
-- etc.
-
-### 4. Add Protobuf Definitions
-
-Generate proper protobuf files in `proto/mining/v1/` for:
-- Messages
-- Queries
-- Genesis state
-
-## Configuration
-
-### Placeholder Values (Change Before Mainnet)
-
-| Item | Current | Notes |
-|------|---------|-------|
-| Chain ID | `nexus-testnet-1` | Change to final name |
-| Binary | `nexusd` | Change to final name |
-| Denom | `unexus` | Change to final token |
-| Max Supply | 100M | Adjust per tokenomics |
-| Emission Rate | 1M/checkpoint | Adjust per economics |
-
-All of these are JSON/config values, not hardcoded in Go.
 
 ## License
 
-[Your license here]
+MIT
 
-## Contact
+## Links
 
-- GitHub: github.com/tomdif/ising-verifier-final
-- Email: tomdif@gmail.com
+- [GitHub](https://github.com/tomdif/nexus-chain)
+- [ZK Proof System](https://github.com/tomdif/zkproof-system)
