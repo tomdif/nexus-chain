@@ -471,8 +471,8 @@ func (l *cometLogger) With(keyvals ...interface{}) cmtlog.Logger {
 }
 
 // ABCIWrapper wraps the Cosmos SDK app to implement CometBFT's ABCI interface
-// This is needed because Cosmos SDK v0.50 uses context.Context in ABCI methods
-// while CometBFT expects methods without context
+// This is needed because Cosmos SDK v0.50 uses different method signatures
+// CometBFT expects context.Context as first parameter, but BaseApp methods don't take it
 type ABCIWrapper struct {
 	App *app.App
 }
@@ -483,11 +483,11 @@ func (w *ABCIWrapper) Info(req *abci.RequestInfo) (*abci.ResponseInfo, error) {
 	return w.App.Info(req)
 }
 
-func (w *ABCIWrapper) Query(req *abci.RequestQuery) (*abci.ResponseQuery, error) {
-	return w.App.Query(context.Background(), req)
+func (w *ABCIWrapper) Query(ctx context.Context, req *abci.RequestQuery) (*abci.ResponseQuery, error) {
+	return w.App.Query(ctx, req)
 }
 
-func (w *ABCIWrapper) CheckTx(req *abci.RequestCheckTx) (*abci.ResponseCheckTx, error) {
+func (w *ABCIWrapper) CheckTx(ctx context.Context, req *abci.RequestCheckTx) (*abci.ResponseCheckTx, error) {
 	return w.App.CheckTx(req)
 }
 
@@ -532,5 +532,5 @@ func (w *ABCIWrapper) LoadSnapshotChunk(req *abci.RequestLoadSnapshotChunk) (*ab
 }
 
 func (w *ABCIWrapper) ApplySnapshotChunk(ctx context.Context, req *abci.RequestApplySnapshotChunk) (*abci.ResponseApplySnapshotChunk, error) {
-	return w.App.ApplySnapshotChunk(ctx, req)
+	return w.App.ApplySnapshotChunk(req)
 }
