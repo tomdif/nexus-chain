@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"os"
@@ -26,6 +27,7 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/spf13/cobra"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	cmtcfg "github.com/cometbft/cometbft/config"
 	cmtlog "github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/node"
@@ -333,19 +335,9 @@ func StartCmd() *cobra.Command {
 			os.MkdirAll(configDir, 0755)
 			os.MkdirAll(dataDir, 0755)
 
-			// Load CometBFT config
+			// Create CometBFT config with root set
 			cmtConfig := cmtcfg.DefaultConfig()
 			cmtConfig.SetRoot(home)
-			configFile := filepath.Join(configDir, "config.toml")
-			if _, err := os.Stat(configFile); os.IsNotExist(err) {
-				cmtcfg.WriteConfigFile(configFile, cmtConfig)
-			} else {
-				// Load existing config
-				cmtConfig, err = cmtcfg.LoadConfig(home)
-				if err != nil {
-					return err
-				}
-			}
 
 			// Load genesis document to get chain ID
 			genFile := filepath.Join(configDir, "genesis.json")
@@ -383,8 +375,11 @@ func StartCmd() *cobra.Command {
 			// Create CometBFT logger adapter
 			cmtLogger := newCometLogger(logger)
 
-			// Create local client creator that wraps our app
-			clientCreator := proxy.NewLocalClientCreator(nexusApp)
+			// Wrap the app to implement CometB FT's ABCI interface
+			abciApp := &ABCIWrapper{App: nexusApp}
+
+			// Create local client creator that wraps our ABCI app
+			clientCreator := proxy.NewLocalClientCreator(abciApp)
 
 			// Create CometBFT node
 			cmtNode, err := node.NewNode(
@@ -473,4 +468,69 @@ func (l *cometLogger) Error(msg string, keyvals ...interface{}) {
 
 func (l *cometLogger) With(keyvals ...interface{}) cmtlog.Logger {
 	return &cometLogger{logger: l.logger.With(keyvals...)}
+}
+
+// ABCIWrapper wraps the Cosmos SDK app to implement CometBFT's ABCI interface
+// This is needed because Cosmos SDK v0.50 uses context.Context in ABCI methods
+// while CometBFT expects methods without context
+type ABCIWrapper struct {
+	App *app.App
+}
+
+// Implement abci.Application interface by wrapping BaseApp methods
+
+func (w *ABCIWrapper) Info(req *abci.RequestInfo) (*abci.ResponseInfo, error) {
+	return w.App.Info(req)
+}
+
+func (w *ABCIWrapper) Query(req *abci.RequestQuery) (*abci.ResponseQuery, error) {
+	return w.App.Query(context.Background(), req)
+}
+
+func (w *ABCIWrapper) CheckTx(req *abci.RequestCheckTx) (*abci.ResponseCheckTx, error) {
+	return w.App.CheckTx(req)
+}
+
+func (w *ABCIWrapper) InitChain(req *abci.RequestInitChain) (*abci.ResponseInitChain, error) {
+	return w.App.InitChain(req)
+}
+
+func (w *ABCIWrapper) PrepareProposal(req *abci.RequestPrepareProposal) (*abci.ResponsePrepareProposal, error) {
+	return w.App.PrepareProposal(req)
+}
+
+func (w *ABCIWrapper) ProcessProposal(req *abci.RequestProcessProposal) (*abci.ResponseProcessProposal, error) {
+	return w.App.ProcessProposal(req)
+}
+
+func (w *ABCIWrapper) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.ResponseFinalizeBlock, error) {
+	return w.App.FinalizeBlock(req)
+}
+
+func (w *ABCIWrapper) ExtendVote(ctx context.Context, req *abci.RequestExtendVote) (*abci.ResponseExtendVote, error) {
+	return w.App.ExtendVote(ctx, req)
+}
+
+func (w *ABCIWrapper) VerifyVoteExtension(req *abci.RequestVerifyVoteExtension) (*abci.ResponseVerifyVoteExtension, error) {
+	return w.App.VerifyVoteExtension(req)
+}
+
+func (w *ABCIWrapper) Commit() (*abci.ResponseCommit, error) {
+	return w.App.Commit()
+}
+
+func (w *ABCIWrapper) ListSnapshots(req *abci.RequestListSnapshots) (*abci.ResponseListSnapshots, error) {
+	return w.App.ListSnapshots(req)
+}
+
+func (w *ABCIWrapper) OfferSnapshot(req *abci.RequestOfferSnapshot) (*abci.ResponseOfferSnapshot, error) {
+	return w.App.OfferSnapshot(req)
+}
+
+func (w *ABCIWrapper) LoadSnapshotChunk(req *abci.RequestLoadSnapshotChunk) (*abci.ResponseLoadSnapshotChunk, error) {
+	return w.App.LoadSnapshotChunk(req)
+}
+
+func (w *ABCIWrapper) ApplySnapshotChunk(ctx context.Context, req *abci.RequestApplySnapshotChunk) (*abci.ResponseApplySnapshotChunk, error) {
+	return w.App.ApplySnapshotChunk(ctx, req)
 }
