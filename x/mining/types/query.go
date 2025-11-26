@@ -3,6 +3,7 @@ package types
 import (
 	"context"
 
+	"github.com/cosmos/cosmos-sdk/client"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -240,7 +241,7 @@ func (q *queryClient) ActiveJob(ctx context.Context, req *QueryActiveJobRequest)
 	return nil, nil
 }
 
-func (q *queryClient) QueueStatus(ctx context.Context, req *QueryQueueStatusRequest) (*QueryQueueStatusResponse, error) {
+func (q *queryClient) QueueStatus(ctx context.Context, req *QueryQueueStatusRequest) (*QueryQueue StatusResponse, error) {
 	return nil, nil
 }
 
