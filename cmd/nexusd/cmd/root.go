@@ -26,7 +26,6 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/spf13/cobra"
 
-	abcitypes "github.com/cometbft/cometbft/abci/types"
 	cmtcfg "github.com/cometbft/cometbft/config"
 	cmtlog "github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/node"
@@ -371,7 +370,7 @@ func StartCmd() *cobra.Command {
 
 			// Load validator private key
 			pvKeyFile := cmtConfig.PrivValidatorKeyFile()
-			pvStateFile :=cmtConfig.PrivValidatorStateFile()
+			pvStateFile := cmtConfig.PrivValidatorStateFile()
 			pv := privval.LoadFilePV(pvKeyFile, pvStateFile)
 
 			// Load node key
