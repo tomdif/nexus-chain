@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"cosmossdk.io/log"
@@ -16,8 +19,10 @@ import (
 	"github.com/spf13/cobra"
 
 	cmtcfg "github.com/cometbft/cometbft/config"
+	"github.com/cometbft/cometbft/node"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
+	"github.com/cometbft/cometbft/proxy"
 	cmttypes "github.com/cometbft/cometbft/types"
 
 	"nexus/app"
@@ -69,8 +74,8 @@ func TxCmd() *cobra.Command {
 
 func QueryCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "query",
-		Short: "Query commands",
+		Use:     "query",
+		Short:   "Query commands",
 		Aliases: []string{"q"},
 	}
 	cmd.AddCommand(miningcli.GetQueryCmd())
@@ -137,29 +142,112 @@ func InitCmd() *cobra.Command {
 
 func StartCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "start",
+		Use:   "start",
+		Short: "Start the NEXUS node",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			home, _ := cmd.Flags().GetString(flags.FlagHome)
-			dbPath := filepath.Join(home, "data")
-			os.MkdirAll(dbPath, 0755)
+			configDir := filepath.Join(home, "config")
+			dataDir := filepath.Join(home, "data")
 
-			db, _ := dbm.NewGoLevelDB("application", dbPath, nil)
+			// Ensure directories exist
+			os.MkdirAll(configDir, 0755)
+			os.MkdirAll(dataDir, 0755)
+
+			// Load CometBFT config
+			cmtConfig := cmtcfg.DefaultConfig()
+			cmtConfig.SetRoot(home)
+			configFile := filepath.Join(configDir, "config.toml")
+			if _, err := os.Stat(configFile); err == nil {
+				cmtConfig = cmtcfg.LoadConfigFile(configFile)
+			} else {
+				// Write default config if it doesn't exist
+				cmtcfg.WriteConfigFile(configFile, cmtConfig)
+			}
+
+			// Open application database
+			dbPath := filepath.Join(home, "data")
+			db, err := dbm.NewGoLevelDB("application", dbPath, nil)
+			if err != nil {
+				return err
+			}
 			defer db.Close()
 
-			logger := log.NewLogger(os.Stdout)
+			// Create logger
+			logger := log.NewLogger(cmd.OutOrStdout())
+
+			// Create NEXUS application
 			nexusApp := app.New(logger, db, nil, true, nil)
+
+			// Load genesis document
+			genFile := filepath.Join(configDir, "genesis.json")
+			genDoc, err := cmttypes.GenesisDocFromFile(genFile)
+			if err != nil {
+				return err
+			}
+
+			// Load validator private key
+			pvKeyFile := filepath.Join(configDir, "priv_validator_key.json")
+			pvStateFile := filepath.Join(dataDir, "priv_validator_state.json")
+			pv := privval.LoadFilePV(pvKeyFile, pvStateFile)
+
+			// Load node key
+			nodeKeyFile := filepath.Join(configDir, "node_key.json")
+			nodeKey, err := p2p.LoadNodeKey(nodeKeyFile)
+			if err != nil {
+				return err
+			}
+
+			// Create CometBFT node with NEXUS app as ABCI application
+			cmtNode, err := node.NewNode(
+				cmtConfig,
+				pv,
+				nodeKey,
+				proxy.NewLocalClientCreator(nexusApp),
+				node.DefaultGenesisDocProviderFunc(cmtConfig),
+				cmtcfg.DefaultDBProvider,
+				node.DefaultMetricsProvider(cmtConfig.Instrumentation),
+				logger.With("module", "node"),
+			)
+			if err != nil {
+				return err
+			}
+
+			// Start the node
+			if err := cmtNode.Start(); err != nil {
+				return err
+			}
 
 			cmd.Println("========================================")
 			cmd.Println("  NEXUS Chain - Proof of Useful Work")
 			cmd.Println("========================================")
-			cmd.Printf("  App: %s\n", nexusApp.Name())
+			cmd.Printf("  Chain ID: %s\n", genDoc.ChainID)
 			cmd.Printf("  Home: %s\n", home)
-			cmd.Println("  Status: App loaded successfully")
+			cmd.Printf("  Node ID: %s\n", nodeKey.ID())
+			cmd.Println("  Status: Node started, producing blocks")
 			cmd.Println("========================================")
 			cmd.Println("")
 			cmd.Println("  Press Ctrl+C to stop")
+			cmd.Println("")
 
-			select {}
+			// Setup signal handling for graceful shutdown
+			sigCh := make(chan os.Signal, 1)
+			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+			// Wait for shutdown signal
+			<-sigCh
+
+			cmd.Println("\nShutting down gracefully...")
+
+			// Stop the node
+			if err := cmtNode.Stop(); err != nil {
+				logger.Error("Error stopping node", "error", err)
+			}
+
+			// Wait for node to stop
+			cmtNode.Wait()
+
+			cmd.Println("Node stopped")
+			return nil
 		},
 	}
 }
