@@ -395,7 +395,7 @@ func GenerateIsingProblem(seed []byte, size int64) ([]byte, string) {
 }
 
 func CalculateThreshold(size int64) int64 {
-	return -int64(float64(size) * 0.5)
+	return -size / 2
 }
 
 // ============================================
