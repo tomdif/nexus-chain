@@ -175,20 +175,36 @@ func InitCmd() *cobra.Command {
 
 			// === BANK MODULE: Add initial balance ===
 			initialBalance := sdk.NewCoins(sdk.NewInt64Coin("unexus", 1000000000000)) // 1M NEX
+			selfDelegation := math.NewInt(100000000000) // 100K NEX = 100000000000 unexus
+			
 			var bankGenState banktypes.GenesisState
 			enc.Codec.MustUnmarshalJSON(appGenState[banktypes.ModuleName], &bankGenState)
 
+			// Add validator operator balance
 			bankGenState.Balances = append(bankGenState.Balances, banktypes.Balance{
 				Address: valOperatorAddr.String(),
 				Coins:   initialBalance,
 			})
-			bankGenState.Supply = bankGenState.Supply.Add(initialBalance...)
+
+			// Add bonded pool module account balance (required for staking)
+			bondedPoolAddr := authtypes.NewModuleAddress(stakingtypes.BondedPoolName)
+			bondedPoolCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", selfDelegation.Int64()))
+			bankGenState.Balances = append(bankGenState.Balances, banktypes.Balance{
+				Address: bondedPoolAddr.String(),
+				Coins:   bondedPoolCoins,
+			})
+
+			// Update total supply
+			bankGenState.Supply = bankGenState.Supply.Add(initialBalance...).Add(bondedPoolCoins...)
 
 			appGenState[banktypes.ModuleName] = enc.Codec.MustMarshalJSON(&bankGenState)
 
 			// === STAKING MODULE: Add validator with delegation ===
 			var stakingGenState stakingtypes.GenesisState
 			enc.Codec.MustUnmarshalJSON(appGenState[stakingtypes.ModuleName], &stakingGenState)
+
+			// Set bond denom to unexus
+			stakingGenState.Params.BondDenom = "unexus"
 
 			// Create validator description
 			description := stakingtypes.Description{
@@ -211,9 +227,6 @@ func InitCmd() *cobra.Command {
 				CommissionRates: commissionRates,
 				UpdateTime:      time.Now(),
 			}
-
-			// Self-delegation amount (must be >= DefaultPowerReduction = 1000000)
-			selfDelegation := math.NewInt(100000000000) // 100K NEX = 100000000000 unexus
 
 			// Convert CometBFT pubkey to SDK pubkey
 			sdkPubKey := &ed25519.PubKey{Key: valPubKey.Bytes()}
