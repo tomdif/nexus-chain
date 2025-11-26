@@ -74,15 +74,12 @@ for i in 1 2 3; do
     P2P_PORT=$((26656 + (i-1)*10))
     RPC_PORT=$((26657 + (i-1)*10))
     
-    # Update P2P port (line ~206)
-    sed -i.bak "s|laddr = \"tcp://0.0.0.0:26656\"|laddr = \"tcp://0.0.0.0:$P2P_PORT\"|g" $CONFIG
+    # Use more specific sed patterns to avoid ambiguity
+    # Update P2P listen address (in [p2p] section, around line 206)
+    sed -i'' -e "/^\[p2p\]/,/^\[/ s|laddr = \"tcp://0.0.0.0:26656\"|laddr = \"tcp://0.0.0.0:$P2P_PORT\"|" $CONFIG
     
-    # Update RPC port (line ~90) - be more specific to avoid matching other laddr lines
-    sed -i.bak "s|laddr = \"tcp://127.0.0.1:26657\"|laddr = \"tcp://127.0.0.1:$RPC_PORT\"|g" $CONFIG
-    
-    # Verify the changes
-    RPC_CHECK=$(grep "^laddr = \"tcp://127.0.0.1:" $CONFIG | head -1)
-    P2P_CHECK=$(grep "^laddr = \"tcp://0.0.0.0:" $CONFIG | head -1)
+    # Update RPC listen address (in [rpc] section, around line 90)
+    sed -i'' -e "/^\[rpc\]/,/^\[/ s|laddr = \"tcp://127.0.0.1:26657\"|laddr = \"tcp://127.0.0.1:$RPC_PORT\"|" $CONFIG
     
     # Build peer list (connect to all other nodes)
     PEERS=""
@@ -91,11 +88,15 @@ for i in 1 2 3; do
     [ $i -ne 3 ] && PEERS="${PEERS}${NODE3_ID}@127.0.0.1:26676,"
     PEERS=${PEERS%,}
     
-    sed -i.bak "s|persistent_peers = \"\"|persistent_peers = \"$PEERS\"|g" $CONFIG
+    sed -i'' -e "s|persistent_peers = \"\"|persistent_peers = \"$PEERS\"|g" $CONFIG
+    
+    # Verify the changes
+    RPC_CHECK=$(grep "laddr = \"tcp://127.0.0.1:" $CONFIG | head -1)
+    P2P_CHECK=$(grep "laddr = \"tcp://0.0.0.0:" $CONFIG | head -1)
     
     echo "  ✓ Node $i: P2P=$P2P_PORT, RPC=$RPC_PORT"
-    echo "    RPC config: $RPC_CHECK"
-    echo "    P2P config: $P2P_CHECK"
+    echo "    RPC: $RPC_CHECK"
+    echo "    P2P: $P2P_CHECK"
 done
 
 echo ""
