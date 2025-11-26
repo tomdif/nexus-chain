@@ -271,7 +271,7 @@ func (q queryServer) LatestCheckpoint(goCtx context.Context, req *types.QueryLat
 	}
 	checkpoint, found := q.Keeper.GetCheckpoint(ctx, lastID)
 	if !found {
-		return nil, types.ErrCheckp ointNotFound
+		return nil, types.ErrCheckpointNotFound
 	}
 	return &types.QueryLatestCheckpointResponse{Checkpoint: checkpoint}, nil
 }
