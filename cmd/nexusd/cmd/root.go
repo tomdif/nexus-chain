@@ -385,9 +385,6 @@ func StartCmd() *cobra.Command {
 				return err
 			}
 
-			// Commit genesis
-			nexusApp.Commit()
-
 			// Load node key for display
 			nodeKeyFile := filepath.Join(configDir, "node_key.json")
 			nodeKey, err := p2p.LoadNodeKey(nodeKeyFile)
