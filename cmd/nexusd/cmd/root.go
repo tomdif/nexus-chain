@@ -28,8 +28,11 @@ import (
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	cmtcfg "github.com/cometbft/cometbft/config"
+	cmtlog "github.com/cometbft/cometbft/libs/log"
+	"github.com/cometbft/cometbft/node"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
+	"github.com/cometbft/cometbft/proxy"
 	cmttypes "github.com/cometbft/cometbft/types"
 
 	"nexus/app"
@@ -321,7 +324,7 @@ func InitCmd() *cobra.Command {
 func StartCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "start",
-		Short: "Start the NEXUS node (test mode - simulated blocks)",
+		Short: "Start the NEXUS node with CometBFT consensus",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			home, _ := cmd.Flags().GetString(flags.FlagHome)
 			configDir := filepath.Join(home, "config")
@@ -337,9 +340,15 @@ func StartCmd() *cobra.Command {
 			configFile := filepath.Join(configDir, "config.toml")
 			if _, err := os.Stat(configFile); os.IsNotExist(err) {
 				cmtcfg.WriteConfigFile(configFile, cmtConfig)
+			} else {
+				// Load existing config
+				cmtConfig, err = cmtcfg.LoadConfig(home)
+				if err != nil {
+					return err
+				}
 			}
 
-			// Load genesis document first to get chain ID
+			// Load genesis document to get chain ID
 			genFile := filepath.Join(configDir, "genesis.json")
 			genDoc, err := cmttypes.GenesisDocFromFile(genFile)
 			if err != nil {
@@ -360,27 +369,41 @@ func StartCmd() *cobra.Command {
 			// Create NEXUS application with chain ID
 			nexusApp := app.New(logger, db, nil, true, nil, genDoc.ChainID)
 
-			// Convert ConsensusParams to proto type
-			consensusParamsProto := genDoc.ConsensusParams.ToProto()
+			// Load validator private key
+			pvKeyFile := cmtConfig.PrivValidatorKeyFile()
+			pvStateFile :=cmtConfig.PrivValidatorStateFile()
+			pv := privval.LoadFilePV(pvKeyFile, pvStateFile)
 
-			// Initialize chain with genesis using InitChain
-			_, err = nexusApp.InitChain(&abcitypes.RequestInitChain{
-				Time:            genDoc.GenesisTime,
-				ChainId:         genDoc.ChainID,
-				ConsensusParams: &consensusParamsProto,
-				Validators:      nil,
-				AppStateBytes:   genDoc.AppState,
-			})
+			// Load node key
+			nodeKeyFile := cmtConfig.NodeKeyFile()
+			nodeKey, err := p2p.LoadNodeKey(nodeKeyFile)
 			if err != nil {
 				return err
 			}
 
-			// DO NOT call Commit() here - the first commit happens after first FinalizeBlock
+			// Create CometBFT logger adapter
+			cmtLogger := newCometLogger(logger)
 
-			// Load node key for display
-			nodeKeyFile := filepath.Join(configDir, "node_key.json")
-			nodeKey, err := p2p.LoadNodeKey(nodeKeyFile)
+			// Create local client creator that wraps our app
+			clientCreator := proxy.NewLocalClientCreator(nexusApp)
+
+			// Create CometBFT node
+			cmtNode, err := node.NewNode(
+				cmtConfig,
+				pv,
+				nodeKey,
+				clientCreator,
+				node.DefaultGenesisDocProviderFunc(cmtConfig),
+				cmtcfg.DefaultDBProvider,
+				node.DefaultMetricsProvider(cmtConfig.Instrumentation),
+				cmtLogger,
+			)
 			if err != nil {
+				return err
+			}
+
+			// Start the node
+			if err := cmtNode.Start(); err != nil {
 				return err
 			}
 
@@ -390,8 +413,7 @@ func StartCmd() *cobra.Command {
 			cmd.Printf("  Chain ID: %s\n", genDoc.ChainID)
 			cmd.Printf("  Home: %s\n", home)
 			cmd.Printf("  Node ID: %s\n", nodeKey.ID())
-			cmd.Println("  Status: Test mode - simulating blocks")
-			cmd.Println("  Block time: 2 seconds")
+			cmd.Println("  Status: Running with CometBFT consensus")
 			cmd.Println("========================================")
 			cmd.Println("")
 			cmd.Println("  Press Ctrl+C to stop")
@@ -401,44 +423,21 @@ func StartCmd() *cobra.Command {
 			sigCh := make(chan os.Signal, 1)
 			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-			// Block production loop (test mode)
-			ticker := time.NewTicker(2 * time.Second)
-			defer ticker.Stop()
+			// Wait for interrupt signal
+			<-sigCh
 
-			height := int64(1)
+			cmd.Println("\nShutting down gracefully...")
 
-			for {
-				select {
-				case <-sigCh:
-					cmd.Println("\nShutting down gracefully...")
-					return nil
-
-				case blockTime := <-ticker.C:
-					// Create FinalizeBlock request
-					req := &abcitypes.RequestFinalizeBlock{
-						Height: height,
-						Time:   blockTime,
-						Hash:   []byte{}, // Empty hash for test mode
-					}
-
-					// Process the block through FinalizeBlock
-					_, err := nexusApp.FinalizeBlock(req)
-					if err != nil {
-						logger.Error("FinalizeBlock failed", "height", height, "error", err)
-						continue
-					}
-
-					// Commit the block
-					nexusApp.Commit()
-
-					logger.Info("Block produced",
-						"height", height,
-						"time", blockTime.Format(time.RFC3339),
-					)
-
-					height++
-				}
+			// Stop the node
+			if err := cmtNode.Stop(); err != nil {
+				logger.Error("Error stopping node", "error", err)
 			}
+
+			// Wait for node to stop
+			cmtNode.Wait()
+
+			cmd.Println("Node stopped")
+			return nil
 		},
 	}
 }
@@ -450,4 +449,29 @@ func VersionCmd() *cobra.Command {
 			cmd.Println("NEXUS v0.1.0")
 		},
 	}
+}
+
+// cometLogger adapts cosmossdk log.Logger to CometBFT's logger interface
+type cometLogger struct {
+	logger log.Logger
+}
+
+func newCometLogger(logger log.Logger) cmtlog.Logger {
+	return &cometLogger{logger: logger}
+}
+
+func (l *cometLogger) Debug(msg string, keyvals ...interface{}) {
+	l.logger.Debug(msg, keyvals...)
+}
+
+func (l *cometLogger) Info(msg string, keyvals ...interface{}) {
+	l.logger.Info(msg, keyvals...)
+}
+
+func (l *cometLogger) Error(msg string, keyvals ...interface{}) {
+	l.logger.Error(msg, keyvals...)
+}
+
+func (l *cometLogger) With(keyvals ...interface{}) cmtlog.Logger {
+	return &cometLogger{logger: l.logger.With(keyvals...)}
 }
