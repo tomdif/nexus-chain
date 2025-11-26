@@ -39,6 +39,71 @@ type QueryMinerSharesResponse struct {
 	Shares int64  `protobuf:"varint,3,opt,name=shares,proto3" json:"shares"`
 }
 
+type QueryMinerStatsRequest struct {
+	MinerAddress string `protobuf:"bytes,1,opt,name=miner_address,json=minerAddress,proto3" json:"miner_address"`
+}
+
+type QueryMinerStatsResponse struct {
+	MinerAddress    string        `protobuf:"bytes,1,opt,name=miner_address,json=minerAddress,proto3" json:"miner_address"`
+	TotalShares     int64         `protobuf:"varint,2,opt,name=total_shares,json=totalShares,proto3" json:"total_shares"`
+	PendingRewards  sdk.Coins     `protobuf:"bytes,3,rep,name=pending_rewards,json=pendingRewards,proto3,castrepeated=github.com/cosmos/cosmos-sdk/types.Coins" json:"pending_rewards"`
+	JobsParticipated int64        `protobuf:"varint,4,opt,name=jobs_participated,json=jobsParticipated,proto3" json:"jobs_participated"`
+	TotalClaimed    sdk.Coins     `protobuf:"bytes,5,rep,name=total_claimed,json=totalClaimed,proto3,castrepeated=github.com/cosmos/cosmos-sdk/types.Coins" json:"total_claimed"`
+	ActiveJobs      []MinerJobInfo `protobuf:"bytes,6,rep,name=active_jobs,json=activeJobs,proto3" json:"active_jobs"`
+}
+
+type MinerJobInfo struct {
+	JobId       string `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id"`
+	Shares      int64  `protobuf:"varint,2,opt,name=shares,proto3" json:"shares"`
+	BestEnergy  int64  `protobuf:"varint,3,opt,name=best_energy,json=bestEnergy,proto3" json:"best_energy"`
+	TotalShares int64  `protobuf:"varint,4,opt,name=total_shares,json=totalShares,proto3" json:"total_shares"`
+}
+
+func (m *MinerJobInfo) Reset()         { *m = MinerJobInfo{} }
+func (m *MinerJobInfo) String() string { return m.JobId }
+func (m *MinerJobInfo) ProtoMessage()  {}
+
+type QueryActiveJobRequest struct{}
+
+type QueryActiveJobResponse struct {
+	Job           *Job  `protobuf:"bytes,1,opt,name=job,proto3" json:"job,omitempty"`
+	TimeRemaining int64 `protobuf:"varint,2,opt,name=time_remaining,json=timeRemaining,proto3" json:"time_remaining"`
+	ProblemSize   int64 `protobuf:"varint,3,opt,name=problem_size,json=problemSize,proto3" json:"problem_size"`
+}
+
+type QueryQueueStatusRequest struct{}
+
+type QueryQueueStatusResponse struct {
+	PaidQueueLength   int64           `protobuf:"varint,1,opt,name=paid_queue_length,json=paidQueueLength,proto3" json:"paid_queue_length"`
+	PublicQueueLength int64           `protobuf:"varint,2,opt,name=public_queue_length,json=publicQueueLength,proto3" json:"public_queue_length"`
+	NextPaidJobs      []QueuedJobInfo `protobuf:"bytes,3,rep,name=next_paid_jobs,json=nextPaidJobs,proto3" json:"next_paid_jobs"`
+	NextPublicJobs    []string        `protobuf:"bytes,4,rep,name=next_public_jobs,json=nextPublicJobs,proto3" json:"next_public_jobs"`
+}
+
+type QueuedJobInfo struct {
+	JobId       string `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id"`
+	Customer    string `protobuf:"bytes,2,opt,name=customer,proto3" json:"customer"`
+	PriorityFee int64  `protobuf:"varint,3,opt,name=priority_fee,json=priorityFee,proto3" json:"priority_fee"`
+	Reward      int64  `protobuf:"varint,4,opt,name=reward,proto3" json:"reward"`
+}
+
+func (q *QueuedJobInfo) Reset()         { *q = QueuedJobInfo{} }
+func (q *QueuedJobInfo) String() string { return q.JobId }
+func (q *QueuedJobInfo) ProtoMessage()  {}
+
+type QueryEmissionInfoRequest struct{}
+
+type QueryEmissionInfoResponse struct {
+	CurrentEpoch       int32  `protobuf:"varint,1,opt,name=current_epoch,json=currentEpoch,proto3" json:"current_epoch"`
+	EmissionRate       int64  `protobuf:"varint,2,opt,name=emission_rate,json=emissionRate,proto3" json:"emission_rate"`
+	EmissionEscrow     int64  `protobuf:"varint,3,opt,name=emission_escrow,json=emissionEscrow,proto3" json:"emission_escrow"`
+	GenesisTime        int64  `protobuf:"varint,4,opt,name=genesis_time,json=genesisTime,proto3" json:"genesis_time"`
+	MinutesIntoEpoch   int64  `protobuf:"varint,5,opt,name=minutes_into_epoch,json=minutesIntoEpoch,proto3" json:"minutes_into_epoch"`
+	MinutesUntilNext   int64  `protobuf:"varint,6,opt,name=minutes_until_next,json=minutesUntilNext,proto3" json:"minutes_until_next"`
+	EpochDuration      int64  `protobuf:"varint,7,opt,name=epoch_duration,json=epochDuration,proto3" json:"epoch_duration"`
+	NextEpochRate      int64  `protobuf:"varint,8,opt,name=next_epoch_rate,json=nextEpochRate,proto3" json:"next_epoch_rate"`
+}
+
 type QueryValidatorMiningRecordRequest struct {
 	Validator string `protobuf:"bytes,1,opt,name=validator,proto3" json:"validator"`
 }
@@ -119,7 +184,78 @@ type QueryServer interface {
 	Job(context.Context, *QueryJobRequest) (*QueryJobResponse, error)
 	Jobs(context.Context, *QueryJobsRequest) (*QueryJobsResponse, error)
 	MinerShares(context.Context, *QueryMinerSharesRequest) (*QueryMinerSharesResponse, error)
+	MinerStats(context.Context, *QueryMinerStatsRequest) (*QueryMinerStatsResponse, error)
+	ActiveJob(context.Context, *QueryActiveJobRequest) (*QueryActiveJobResponse, error)
+	QueueStatus(context.Context, *QueryQueueStatusRequest) (*QueryQueueStatusResponse, error)
+	EmissionInfo(context.Context, *QueryEmissionInfoRequest) (*QueryEmissionInfoResponse, error)
 	ValidatorMiningRecord(context.Context, *QueryValidatorMiningRecordRequest) (*QueryValidatorMiningRecordResponse, error)
 	Checkpoint(context.Context, *QueryCheckpointRequest) (*QueryCheckpointResponse, error)
 	LatestCheckpoint(context.Context, *QueryLatestCheckpointRequest) (*QueryLatestCheckpointResponse, error)
+}
+
+// NewQueryClient creates a new QueryClient
+func NewQueryClient(clientCtx client.Context) QueryClient {
+	return &queryClient{clientCtx: clientCtx}
+}
+
+type QueryClient interface {
+	Params(ctx context.Context, req *QueryParamsRequest) (*QueryParamsResponse, error)
+	Job(ctx context.Context, req *QueryJobRequest) (*QueryJobResponse, error)
+	Jobs(ctx context.Context, req *QueryJobsRequest) (*QueryJobsResponse, error)
+	MinerShares(ctx context.Context, req *QueryMinerSharesRequest) (*QueryMinerSharesResponse, error)
+	MinerStats(ctx context.Context, req *QueryMinerStatsRequest) (*QueryMinerStatsResponse, error)
+	ActiveJob(ctx context.Context, req *QueryActiveJobRequest) (*QueryActiveJobResponse, error)
+	QueueStatus(ctx context.Context, req *QueryQueueStatusRequest) (*QueryQueueStatusResponse, error)
+	EmissionInfo(ctx context.Context, req *QueryEmissionInfoRequest) (*QueryEmissionInfoResponse, error)
+	ValidatorMiningRecord(ctx context.Context, req *QueryValidatorMiningRecordRequest) (*QueryValidatorMiningRecordResponse, error)
+	Checkpoint(ctx context.Context, req *QueryCheckpointRequest) (*QueryCheckpointResponse, error)
+	LatestCheckpoint(ctx context.Context, req *QueryLatestCheckpointRequest) (*QueryLatestCheckpointResponse, error)
+}
+
+type queryClient struct {
+	clientCtx client.Context
+}
+
+func (q *queryClient) Params(ctx context.Context, req *QueryParamsRequest) (*QueryParamsResponse, error) {
+	return nil, nil
+}
+
+func (q *queryClient) Job(ctx context.Context, req *QueryJobRequest) (*QueryJobResponse, error) {
+	return nil, nil
+}
+
+func (q *queryClient) Jobs(ctx context.Context, req *QueryJobsRequest) (*QueryJobsResponse, error) {
+	return nil, nil
+}
+
+func (q *queryClient) MinerShares(ctx context.Context, req *QueryMinerSharesRequest) (*QueryMinerSharesResponse, error) {
+	return nil, nil
+}
+
+func (q *queryClient) MinerStats(ctx context.Context, req *QueryMinerStatsRequest) (*QueryMinerStatsResponse, error) {
+	return nil, nil
+}
+
+func (q *queryClient) ActiveJob(ctx context.Context, req *QueryActiveJobRequest) (*QueryActiveJobResponse, error) {
+	return nil, nil
+}
+
+func (q *queryClient) QueueStatus(ctx context.Context, req *QueryQueueStatusRequest) (*QueryQueueStatusResponse, error) {
+	return nil, nil
+}
+
+func (q *queryClient) EmissionInfo(ctx context.Context, req *QueryEmissionInfoRequest) (*QueryEmissionInfoResponse, error) {
+	return nil, nil
+}
+
+func (q *queryClient) ValidatorMiningRecord(ctx context.Context, req *QueryValidatorMiningRecordRequest) (*QueryValidatorMiningRecordResponse, error) {
+	return nil, nil
+}
+
+func (q *queryClient) Checkpoint(ctx context.Context, req *QueryCheckpointRequest) (*QueryCheckpointResponse, error) {
+	return nil, nil
+}
+
+func (q *queryClient) LatestCheckpoint(ctx context.Context, req *QueryLatestCheckpointRequest) (*QueryLatestCheckpointResponse, error) {
+	return nil, nil
 }
