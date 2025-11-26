@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -26,6 +27,7 @@ import (
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	cmtcfg "github.com/cometbft/cometbft/config"
@@ -337,12 +339,16 @@ func StartCmd() *cobra.Command {
 
 			// Load CometBFT config from file (respects custom ports)
 			configFile := filepath.Join(configDir, "config.toml")
-			cmtConfig, err := cmtcfg.LoadTomlConfigFile(configFile)
-			if err != nil {
-				// Fallback to default if config doesn't exist
-				cmtConfig = cmtcfg.DefaultConfig()
-			}
+			cmtConfig := cmtcfg.DefaultConfig()
 			cmtConfig.SetRoot(home)
+			
+			// Use viper to read and unmarshal the config file
+			viper.SetConfigFile(configFile)
+			if err := viper.ReadInConfig(); err == nil {
+				if err := viper.Unmarshal(cmtConfig); err != nil {
+					return fmt.Errorf("failed to parse config: %w", err)
+				}
+			}
 
 			// Load genesis document to get chain ID
 			genFile := filepath.Join(configDir, "genesis.json")
