@@ -10,7 +10,15 @@ import (
 )
 
 func (k Keeper) BeginBlocker(ctx sdk.Context) error {
-	// Process expired jobs at beginning of each block
+	// 1. Process emissions (accumulate tokens every minute into escrow)
+	if err := k.ProcessEmissions(ctx); err != nil {
+		k.Logger(ctx).Error("Failed to process emissions", "error", err)
+	}
+
+	// 2. Check and generate background job if needed
+	// Priority: random public job from queue, then synthetic generation
+	k.CheckAndGenerateBackgroundJob(ctx)
+
 	return nil
 }
 
@@ -41,6 +49,9 @@ func (k Keeper) createCheckpointAndDistribute(ctx sdk.Context, height int64, par
 	// Get validator reward pool before distribution
 	rewardPool := k.GetValidatorRewardPool(ctx)
 
+	// Get emission escrow for logging
+	emissionEscrow := k.GetEmissionEscrow(ctx)
+
 	checkpoint := types.Checkpoint{
 		Id:               newID,
 		StartHeight:      startHeight,
@@ -56,6 +67,8 @@ func (k Keeper) createCheckpointAndDistribute(ctx sdk.Context, height int64, par
 		"id", newID,
 		"height", height,
 		"validator_reward_pool", rewardPool,
+		"emission_escrow", emissionEscrow,
+		"problem_size", k.GetCurrentProblemSize(ctx),
 	)
 
 	// Distribute validator rewards if there's anything to distribute
@@ -77,11 +90,12 @@ func (k Keeper) createCheckpointAndDistribute(ctx sdk.Context, height int64, par
 			sdk.NewAttribute("checkpoint_id", fmt.Sprintf("%d", newID)),
 			sdk.NewAttribute("height", fmt.Sprintf("%d", height)),
 			sdk.NewAttribute("validator_rewards_distributed", fmt.Sprintf("%d", rewardPool)),
+			sdk.NewAttribute("emission_escrow", fmt.Sprintf("%d", emissionEscrow)),
 		),
 	)
 }
 
-// distributeValidatorRewards distributes the reward pool to bonded validators
+// distributeValidatorRewardsInternal distributes the reward pool to bonded validators
 // proportional to their stake. Returns total amount distributed.
 func (k Keeper) distributeValidatorRewardsInternal(ctx sdk.Context, rewardPool int64) (int64, error) {
 	if k.stakingKeeper == nil || k.bankKeeper == nil {
@@ -106,32 +120,26 @@ func (k Keeper) distributeValidatorRewardsInternal(ctx sdk.Context, rewardPool i
 
 	// Iterate through all bonded validators and distribute proportionally
 	err = k.stakingKeeper.IterateBondedValidatorsByPower(ctx, func(index int64, validator stakingtypes.ValidatorI) (stop bool) {
-		// Get validator's bonded tokens
 		valTokens := validator.GetBondedTokens()
 		if valTokens.IsZero() {
-			return false // continue
+			return false
 		}
 
-		// Calculate proportional share: (valTokens / totalBonded) * rewardPool
 		share := valTokens.Mul(rewardPoolInt).Quo(totalBonded)
 		if share.IsZero() {
-			return false // continue
+			return false
 		}
 
 		shareAmount := share.Int64()
-
-		// Get validator's operator address (returns string in SDK v0.50)
 		valAddrStr := validator.GetOperator()
-		
-		// Convert to AccAddress for sending rewards
+
 		valAddr, addrErr := sdk.ValAddressFromBech32(valAddrStr)
 		if addrErr != nil {
 			k.Logger(ctx).Error("Invalid validator address", "address", valAddrStr, "error", addrErr)
-			return false // continue
+			return false
 		}
 		accAddr := sdk.AccAddress(valAddr)
 
-		// Send rewards from module to validator
 		rewardCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", shareAmount))
 		sendErr := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, accAddr, rewardCoins)
 		if sendErr != nil {
@@ -140,7 +148,7 @@ func (k Keeper) distributeValidatorRewardsInternal(ctx sdk.Context, rewardPool i
 				"amount", shareAmount,
 				"error", sendErr,
 			)
-			return false // continue to next validator
+			return false
 		}
 
 		totalDistributed += shareAmount
@@ -159,21 +167,18 @@ func (k Keeper) distributeValidatorRewardsInternal(ctx sdk.Context, rewardPool i
 			),
 		)
 
-		return false // continue iteration
+		return false
 	})
 
 	if err != nil {
 		return totalDistributed, fmt.Errorf("error iterating validators: %w", err)
 	}
 
-	// Clear the pool after distribution
 	k.SetValidatorRewardPool(ctx, 0)
 
-	// Handle any remainder (due to rounding)
 	remainder := rewardPool - totalDistributed
 	if remainder > 0 {
 		k.Logger(ctx).Debug("Reward distribution remainder", "remainder", remainder)
-		// Remainder stays in module account, will be part of next distribution
 	}
 
 	ctx.EventManager().EmitEvent(

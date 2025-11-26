@@ -531,3 +531,136 @@ func TestEmissionEpochs(t *testing.T) {
 		}
 	}
 }
+
+func TestBackgroundJobGeneration(t *testing.T) {
+	k, ctx := setupKeeper(t)
+
+	t.Logf("=== BACKGROUND JOB GENERATION ===")
+
+	// Initially no active jobs
+	activeCount := k.GetActiveJobCount(ctx)
+	t.Logf("Initial active job count: %d", activeCount)
+
+	// Check and generate should create a synthetic job
+	k.CheckAndGenerateBackgroundJob(ctx)
+
+	// Should now have an active job
+	activeCount = k.GetActiveJobCount(ctx)
+	t.Logf("After generation, active count: %d", activeCount)
+
+	if activeCount != 1 {
+		t.Errorf("Expected 1 active job, got %d", activeCount)
+	}
+
+	// Get current job
+	currentJobID := k.GetCurrentJobID(ctx)
+	t.Logf("Current job ID: %s", currentJobID)
+
+	if currentJobID == "" {
+		t.Error("Expected current job ID to be set")
+	}
+
+	// Verify job exists and is background
+	job, found := k.GetJob(ctx, currentJobID)
+	if !found {
+		t.Error("Job not found")
+	}
+
+	t.Logf("Job details: type=%s, threshold=%d, is_background=%t",
+		job.ProblemType, job.Threshold, job.IsBackground)
+
+	if !job.IsBackground {
+		t.Error("Expected job to be background")
+	}
+
+	if job.ProblemType != "ising_synthetic" {
+		t.Errorf("Expected ising_synthetic, got %s", job.ProblemType)
+	}
+
+	// Should not generate another job while one is active
+	k.CheckAndGenerateBackgroundJob(ctx)
+	activeCount = k.GetActiveJobCount(ctx)
+	if activeCount != 1 {
+		t.Errorf("Should still have 1 job, got %d", activeCount)
+	}
+
+	t.Logf("✓ Background job generation working!")
+}
+
+func TestPublicJobQueue(t *testing.T) {
+	k, ctx := setupKeeper(t)
+
+	t.Logf("=== PUBLIC JOB QUEUE (RANDOM SELECTION) ===")
+
+	// Add jobs to queue
+	k.AddToPublicJobQueue(ctx, "pub_job_1")
+	k.AddToPublicJobQueue(ctx, "pub_job_2")
+	k.AddToPublicJobQueue(ctx, "pub_job_3")
+
+	queueLen := k.GetPublicJobQueueLength(ctx)
+	t.Logf("Queue length: %d", queueLen)
+
+	if queueLen != 3 {
+		t.Errorf("Expected 3 jobs in queue, got %d", queueLen)
+	}
+
+	// Select random job
+	selected := k.SelectRandomFromQueue(ctx)
+	t.Logf("Randomly selected: %s", selected)
+
+	if selected == "" {
+		t.Error("Expected a job to be selected")
+	}
+
+	// Queue should now have 2
+	queueLen = k.GetPublicJobQueueLength(ctx)
+	if queueLen != 2 {
+		t.Errorf("Expected 2 jobs after selection, got %d", queueLen)
+	}
+
+	// Remaining queue
+	queue := k.GetPublicJobQueue(ctx)
+	t.Logf("Remaining queue: %v", queue)
+
+	// Selected job should not be in queue
+	for _, id := range queue {
+		if id == selected {
+			t.Errorf("Selected job %s should not be in queue", selected)
+		}
+	}
+
+	t.Logf("✓ Public job queue with random selection working!")
+}
+
+func TestDifficultyAdjustment(t *testing.T) {
+	k, ctx := setupKeeper(t)
+
+	t.Logf("=== DIFFICULTY ADJUSTMENT ===")
+
+	initialSize := k.GetCurrentProblemSize(ctx)
+	t.Logf("Initial problem size: %d", initialSize)
+
+	// Simulate 3 fast solves (under 8 minutes = 480 seconds)
+	k.AddSolveTime(ctx, 300) // 5 min
+	k.AddSolveTime(ctx, 350) // ~6 min
+	shouldAdjust := k.AddSolveTime(ctx, 400) // ~7 min
+
+	t.Logf("Should adjust after 3 solves: %t", shouldAdjust)
+
+	if !shouldAdjust {
+		t.Error("Expected adjustment after 3 solves")
+	}
+
+	// Trigger adjustment
+	k.AdjustDifficulty(ctx)
+
+	newSize := k.GetCurrentProblemSize(ctx)
+	t.Logf("New problem size: %d (was %d)", newSize, initialSize)
+
+	// Fast solves should increase difficulty
+	if newSize <= initialSize {
+		t.Errorf("Expected size to increase, got %d <= %d", newSize, initialSize)
+	}
+
+	t.Logf("✓ Difficulty adjustment working!")
+}
