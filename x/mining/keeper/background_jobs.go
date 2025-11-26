@@ -490,6 +490,9 @@ func (k Keeper) ActivateRandomPublicJob(ctx sdk.Context) (*types.Job, error) {
 
 // CheckAndGenerateBackgroundJob ensures there's always an active job
 // Priority: Random selection from public queue, then synthetic generation
+
+// CheckAndGenerateBackgroundJob ensures there's always an active job
+// Priority: 1. Paid jobs (by priority fee), 2. Public jobs (random), 3. Synthetic
 func (k Keeper) CheckAndGenerateBackgroundJob(ctx sdk.Context) {
 	activeCount := k.GetActiveJobCount(ctx)
 	if activeCount >= MinActiveJobs {
@@ -508,7 +511,16 @@ func (k Keeper) CheckAndGenerateBackgroundJob(ctx sdk.Context) {
 		}
 	}
 
-	// Try to activate a random public job first
+	// Priority 1: Try to activate highest priority PAID job
+	paidJob, err := k.ActivateNextPaidJob(ctx)
+	if err != nil {
+		k.Logger(ctx).Error("Failed to activate paid job", "error", err)
+	}
+	if paidJob != nil {
+		return
+	}
+
+	// Priority 2: Try to activate random PUBLIC job
 	publicJob, err := k.ActivateRandomPublicJob(ctx)
 	if err != nil {
 		k.Logger(ctx).Error("Failed to activate public job", "error", err)
@@ -517,13 +529,50 @@ func (k Keeper) CheckAndGenerateBackgroundJob(ctx sdk.Context) {
 		return
 	}
 
-	// No public jobs - generate synthetic
+	// Priority 3: No queued jobs - generate SYNTHETIC
 	_, err = k.GenerateSyntheticBackgroundJob(ctx)
 	if err != nil {
 		k.Logger(ctx).Error("Failed to generate synthetic job", "error", err)
 	}
 }
 
+// ActivateNextPaidJob activates the highest priority paid job from queue
+func (k Keeper) ActivateNextPaidJob(ctx sdk.Context) (*types.Job, error) {
+	jobID := k.PopFromPaidJobQueue(ctx)
+	if jobID == "" {
+		return nil, nil
+	}
+
+	job, found := k.GetJob(ctx, jobID)
+	if !found {
+		return nil, fmt.Errorf("paid job not found: %s", jobID)
+	}
+
+	job.Status = types.JobStatusActive
+	job.CreatedAt = ctx.BlockTime().Unix()
+	job.Deadline = ctx.BlockTime().Unix() + DefaultBackgroundJobDuration
+	k.SetJob(ctx, job)
+	k.SetCurrentJobID(ctx, jobID)
+	k.IncrementActiveJobCount(ctx)
+
+	k.Logger(ctx).Info("Activated paid job",
+		"job_id", jobID,
+		"customer", job.Customer,
+		"reward", job.Reward,
+		"priority_fee", job.PriorityFee,
+	)
+
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			"paid_job_activated",
+			sdk.NewAttribute("job_id", jobID),
+			sdk.NewAttribute("customer", job.Customer),
+			sdk.NewAttribute("priority_fee", fmt.Sprintf("%d", job.PriorityFee)),
+		),
+	)
+
+	return &job, nil
+}
 func (k Keeper) ExpireJob(ctx sdk.Context, jobID string) {
 	job, found := k.GetJob(ctx, jobID)
 	if !found || job.Status != types.JobStatusActive {
@@ -602,4 +651,129 @@ func (k Keeper) OnJobSolved(ctx sdk.Context, jobID string, solverAddr string, so
 			sdk.NewAttribute("solver", solverAddr),
 		),
 	)
+}
+
+// ============================================
+// PAID JOB QUEUE (Priority Fee Sorted)
+// ============================================
+
+var PaidJobQueueKey = []byte("paid_job_queue")
+
+// PaidJobEntry stores job ID with its priority fee for sorting
+type PaidJobEntry struct {
+	JobID       string
+	PriorityFee int64
+	SubmitTime  int64
+}
+
+// GetPaidJobQueue returns the paid job queue (sorted by priority fee desc, then time asc)
+func (k Keeper) GetPaidJobQueue(ctx sdk.Context) []PaidJobEntry {
+	store := ctx.KVStore(k.storeKey)
+	bz := store.Get(PaidJobQueueKey)
+	if bz == nil {
+		return []PaidJobEntry{}
+	}
+
+	// Decode: each entry is 8 bytes priorityFee + 8 bytes submitTime + 4 bytes jobID length + jobID
+	queue := []PaidJobEntry{}
+	offset := 0
+	for offset < len(bz) {
+		if offset+20 > len(bz) {
+			break
+		}
+		priorityFee := int64(binary.BigEndian.Uint64(bz[offset : offset+8]))
+		offset += 8
+		submitTime := int64(binary.BigEndian.Uint64(bz[offset : offset+8]))
+		offset += 8
+		idLen := int(binary.BigEndian.Uint32(bz[offset : offset+4]))
+		offset += 4
+		if offset+idLen > len(bz) {
+			break
+		}
+		jobID := string(bz[offset : offset+idLen])
+		offset += idLen
+		queue = append(queue, PaidJobEntry{JobID: jobID, PriorityFee: priorityFee, SubmitTime: submitTime})
+	}
+	return queue
+}
+
+// SetPaidJobQueue saves the paid job queue
+func (k Keeper) SetPaidJobQueue(ctx sdk.Context, queue []PaidJobEntry) {
+	store := ctx.KVStore(k.storeKey)
+
+	totalSize := 0
+	for _, entry := range queue {
+		totalSize += 8 + 8 + 4 + len(entry.JobID)
+	}
+
+	bz := make([]byte, totalSize)
+	offset := 0
+	for _, entry := range queue {
+		binary.BigEndian.PutUint64(bz[offset:offset+8], uint64(entry.PriorityFee))
+		offset += 8
+		binary.BigEndian.PutUint64(bz[offset:offset+8], uint64(entry.SubmitTime))
+		offset += 8
+		binary.BigEndian.PutUint32(bz[offset:offset+4], uint32(len(entry.JobID)))
+		offset += 4
+		copy(bz[offset:], entry.JobID)
+		offset += len(entry.JobID)
+	}
+
+	store.Set(PaidJobQueueKey, bz)
+}
+
+// AddToPaidJobQueue adds a job to the paid queue in sorted position
+func (k Keeper) AddToPaidJobQueue(ctx sdk.Context, jobID string, priorityFee int64) int64 {
+	queue := k.GetPaidJobQueue(ctx)
+	submitTime := ctx.BlockTime().Unix()
+
+	newEntry := PaidJobEntry{JobID: jobID, PriorityFee: priorityFee, SubmitTime: submitTime}
+
+	// Find insertion point (sorted by priority fee desc, then submit time asc)
+	insertIdx := len(queue)
+	for i, entry := range queue {
+		if priorityFee > entry.PriorityFee {
+			insertIdx = i
+			break
+		} else if priorityFee == entry.PriorityFee && submitTime < entry.SubmitTime {
+			insertIdx = i
+			break
+		}
+	}
+
+	// Insert at position
+	queue = append(queue[:insertIdx], append([]PaidJobEntry{newEntry}, queue[insertIdx:]...)...)
+	k.SetPaidJobQueue(ctx, queue)
+
+	return int64(insertIdx + 1) // 1-indexed position
+}
+
+// PopFromPaidJobQueue removes and returns the highest priority job
+func (k Keeper) PopFromPaidJobQueue(ctx sdk.Context) string {
+	queue := k.GetPaidJobQueue(ctx)
+	if len(queue) == 0 {
+		return ""
+	}
+
+	jobID := queue[0].JobID
+	k.SetPaidJobQueue(ctx, queue[1:])
+	return jobID
+}
+
+// GetPaidJobQueueLength returns the number of paid jobs in queue
+func (k Keeper) GetPaidJobQueueLength(ctx sdk.Context) int {
+	return len(k.GetPaidJobQueue(ctx))
+}
+
+// RemoveFromPaidJobQueue removes a specific job from the queue (for cancellation)
+func (k Keeper) RemoveFromPaidJobQueue(ctx sdk.Context, jobID string) bool {
+	queue := k.GetPaidJobQueue(ctx)
+	for i, entry := range queue {
+		if entry.JobID == jobID {
+			queue = append(queue[:i], queue[i+1:]...)
+			k.SetPaidJobQueue(ctx, queue)
+			return true
+		}
+	}
+	return false
 }

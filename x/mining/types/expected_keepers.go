@@ -29,3 +29,9 @@ type AccountKeeper interface {
 	GetAccount(ctx context.Context, addr sdk.AccAddress) sdk.AccountI
 	GetModuleAddress(moduleName string) sdk.AccAddress
 }
+
+// GetDelegatorBonded returns total bonded tokens for a delegator
+type StakingKeeperExtended interface {
+	StakingKeeper
+	GetDelegatorBonded(ctx context.Context, delegator sdk.AccAddress) (math.Int, error)
+}

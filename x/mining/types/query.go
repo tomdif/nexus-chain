@@ -63,7 +63,8 @@ type QueryLatestCheckpointResponse struct {
 
 // Message responses
 type MsgPostJobResponse struct {
-	JobId string `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	JobId         string `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	QueuePosition int64  `protobuf:"varint,2,opt,name=queue_position,json=queuePosition,proto3" json:"queue_position,omitempty"`
 }
 
 func (m *MsgPostJobResponse) Reset()         { *m = MsgPostJobResponse{} }
@@ -71,7 +72,8 @@ func (m *MsgPostJobResponse) String() string { return "MsgPostJobResponse" }
 func (m *MsgPostJobResponse) ProtoMessage()  {}
 
 type MsgSubmitProofResponse struct {
-	SharesEarned int64 `protobuf:"varint,1,opt,name=shares_earned,json=sharesEarned,proto3" json:"shares_earned,omitempty"`
+	Accepted bool  `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	Shares   int64 `protobuf:"varint,2,opt,name=shares,proto3" json:"shares,omitempty"`
 }
 
 func (m *MsgSubmitProofResponse) Reset()         { *m = MsgSubmitProofResponse{} }
@@ -94,12 +96,22 @@ func (m *MsgCancelJobResponse) Reset()         { *m = MsgCancelJobResponse{} }
 func (m *MsgCancelJobResponse) String() string { return "MsgCancelJobResponse" }
 func (m *MsgCancelJobResponse) ProtoMessage()  {}
 
+type MsgSubmitPublicJobResponse struct {
+	JobId         string `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	QueuePosition int64  `protobuf:"varint,2,opt,name=queue_position,json=queuePosition,proto3" json:"queue_position,omitempty"`
+}
+
+func (m *MsgSubmitPublicJobResponse) Reset()         { *m = MsgSubmitPublicJobResponse{} }
+func (m *MsgSubmitPublicJobResponse) String() string { return "MsgSubmitPublicJobResponse" }
+func (m *MsgSubmitPublicJobResponse) ProtoMessage()  {}
+
 // Server interfaces
 type MsgServer interface {
 	PostJob(context.Context, *MsgPostJob) (*MsgPostJobResponse, error)
 	SubmitProof(context.Context, *MsgSubmitProof) (*MsgSubmitProofResponse, error)
 	ClaimRewards(context.Context, *MsgClaimRewards) (*MsgClaimRewardsResponse, error)
 	CancelJob(context.Context, *MsgCancelJob) (*MsgCancelJobResponse, error)
+	SubmitPublicJob(context.Context, *MsgSubmitPublicJob) (*MsgSubmitPublicJobResponse, error)
 }
 
 type QueryServer interface {

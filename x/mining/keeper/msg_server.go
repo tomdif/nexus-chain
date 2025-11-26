@@ -45,103 +45,120 @@ type VerifyResponse struct {
 const VerifierURL = "http://localhost:3000/verify"
 
 // PostJob creates a new mining job, burns job fee, and escrows the net reward
+
 func (k msgServer) PostJob(goCtx context.Context, msg *types.MsgPostJob) (*types.MsgPostJobResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	// Generate job ID
-	jobID := fmt.Sprintf("job_%d_%s", ctx.BlockHeight(), msg.Customer[:8])
+	jobID := fmt.Sprintf("paid_%d_%s", ctx.BlockHeight(), msg.Customer[:8])
 
-	// Convert sdk.Coins reward to int64 (use first coin amount)
+	customerAddr, err := sdk.AccAddressFromBech32(msg.Customer)
+	if err != nil {
+		return nil, types.ErrInvalidJob
+	}
+
+	// Convert sdk.Coins reward to int64
 	var grossRewardAmount int64
 	if len(msg.Reward) > 0 {
 		grossRewardAmount = msg.Reward[0].Amount.Int64()
 	}
 
-	// Calculate fee burn (2% of reward)
+	// Get priority fee amount
+	var priorityFeeAmount int64
+	if len(msg.PriorityFee) > 0 {
+		priorityFeeAmount = msg.PriorityFee[0].Amount.Int64()
+	}
+
+	// Calculate job fee burn (2% of reward)
 	params := k.GetParams(ctx)
 	feeBurnPercent := int64(params.JobFeeBurnPercent)
 	feeBurnAmount := (grossRewardAmount * feeBurnPercent) / 100
 	netRewardAmount := grossRewardAmount - feeBurnAmount
 
-	// Transfer gross amount from customer to module
-	if k.bankKeeper != nil && len(msg.Reward) > 0 {
-		customerAddr, err := sdk.AccAddressFromBech32(msg.Customer)
-		if err != nil {
-			return nil, types.ErrInvalidJob
-		}
+	// Total to collect = reward + priority fee
+	totalToCollect := grossRewardAmount + priorityFeeAmount
 
-		// Transfer full amount to module first
-		err = k.bankKeeper.SendCoinsFromAccountToModule(ctx, customerAddr, types.ModuleName, msg.Reward)
+	// Transfer total amount from customer to module
+	if k.bankKeeper != nil && totalToCollect > 0 {
+		collectCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", totalToCollect))
+		err = k.bankKeeper.SendCoinsFromAccountToModule(ctx, customerAddr, types.ModuleName, collectCoins)
 		if err != nil {
 			return nil, fmt.Errorf("failed to escrow reward: %w", err)
 		}
 
-		// Burn the fee portion (2% job fee - deflationary)
-		if feeBurnAmount > 0 {
-			feeBurnCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", feeBurnAmount))
-			err = k.bankKeeper.BurnCoins(ctx, types.ModuleName, feeBurnCoins)
+		// Burn the job fee (2% of reward) + entire priority fee
+		totalBurnAmount := feeBurnAmount + priorityFeeAmount
+		if totalBurnAmount > 0 {
+			burnCoins := sdk.NewCoins(sdk.NewInt64Coin("unexus", totalBurnAmount))
+			err = k.bankKeeper.BurnCoins(ctx, types.ModuleName, burnCoins)
 			if err != nil {
-				return nil, fmt.Errorf("failed to burn job fee: %w", err)
+				return nil, fmt.Errorf("failed to burn fees: %w", err)
 			}
 
-			ctx.Logger().Info("Burned job fee",
+			ctx.Logger().Info("Burned job fees",
 				"job_id", jobID,
-				"fee_burned", feeBurnCoins.String(),
-				"net_reward", netRewardAmount,
+				"job_fee_burned", feeBurnAmount,
+				"priority_fee_burned", priorityFeeAmount,
+				"total_burned", totalBurnAmount,
 			)
 
 			ctx.EventManager().EmitEvent(
 				sdk.NewEvent(
 					"fee_burned",
 					sdk.NewAttribute("job_id", jobID),
-					sdk.NewAttribute("amount", feeBurnCoins.String()),
-					sdk.NewAttribute("type", "job_fee"),
+					sdk.NewAttribute("job_fee", fmt.Sprintf("%d", feeBurnAmount)),
+					sdk.NewAttribute("priority_fee", fmt.Sprintf("%d", priorityFeeAmount)),
+					sdk.NewAttribute("type", "paid_job"),
 				),
 			)
 		}
-
-		ctx.Logger().Info("Escrowed job reward",
-			"job_id", jobID,
-			"gross", msg.Reward.String(),
-			"fee_burned", feeBurnAmount,
-			"net_escrowed", netRewardAmount,
-		)
 	}
 
+	// Create job (status = Queued, not Active)
 	job := types.Job{
-		Id:          jobID,
-		Customer:    msg.Customer,
-		ProblemType: msg.ProblemType,
-		ProblemData: msg.ProblemData,
-		ProblemHash: msg.ProblemHash,
-		Threshold:   msg.Threshold,
-		Reward:      netRewardAmount, // Store net reward (after fee burn)
-		Status:      types.JobStatusActive,
-		BestEnergy:  0,
-		BestSolver:  "",
-		TotalShares: 0,
-		CreatedAt:   ctx.BlockHeight(),
-		Deadline:    ctx.BlockHeight() + msg.Duration,
+		Id:           jobID,
+		Customer:     msg.Customer,
+		ProblemType:  msg.ProblemType,
+		ProblemData:  msg.ProblemData,
+		ProblemHash:  msg.ProblemHash,
+		Threshold:    msg.Threshold,
+		Reward:       netRewardAmount,
+		Status:       types.JobStatusQueued,
+		BestEnergy:   0,
+		BestSolver:   "",
+		TotalShares:  0,
+		CreatedAt:    ctx.BlockTime().Unix(),
+		Deadline:     0, // Set when activated
+		IsBackground: false,
+		PriorityFee:  priorityFeeAmount,
 	}
 
 	k.SetJob(ctx, job)
+
+	// Add to paid job queue (sorted by priority fee)
+	queuePosition := k.AddToPaidJobQueue(ctx, jobID, priorityFeeAmount)
+
+	ctx.Logger().Info("Paid job queued",
+		"job_id", jobID,
+		"customer", msg.Customer,
+		"reward", netRewardAmount,
+		"priority_fee", priorityFeeAmount,
+		"queue_position", queuePosition,
+	)
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			"job_posted",
 			sdk.NewAttribute("job_id", jobID),
 			sdk.NewAttribute("customer", msg.Customer),
-			sdk.NewAttribute("threshold", fmt.Sprintf("%d", msg.Threshold)),
-			sdk.NewAttribute("gross_reward", fmt.Sprintf("%d", grossRewardAmount)),
-			sdk.NewAttribute("fee_burned", fmt.Sprintf("%d", feeBurnAmount)),
 			sdk.NewAttribute("net_reward", fmt.Sprintf("%d", netRewardAmount)),
+			sdk.NewAttribute("priority_fee", fmt.Sprintf("%d", priorityFeeAmount)),
+			sdk.NewAttribute("queue_position", fmt.Sprintf("%d", queuePosition)),
 		),
 	)
 
-	return &types.MsgPostJobResponse{JobId: jobID}, nil
+	return &types.MsgPostJobResponse{JobId: jobID, QueuePosition: queuePosition}, nil
 }
-
-// SubmitProof processes a mining proof submission with ZK verification
 func (k msgServer) SubmitProof(goCtx context.Context, msg *types.MsgSubmitProof) (*types.MsgSubmitProofResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
@@ -221,7 +238,7 @@ func (k msgServer) SubmitProof(goCtx context.Context, msg *types.MsgSubmitProof)
 		)
 	}
 
-	return &types.MsgSubmitProofResponse{SharesEarned: sharesEarned}, nil
+	return &types.MsgSubmitProofResponse{Accepted: true, Shares: sharesEarned}, nil
 }
 
 // verifyNovaProof calls the external Nova verification service
@@ -387,4 +404,107 @@ func (k msgServer) CancelJob(goCtx context.Context, msg *types.MsgCancelJob) (*t
 	)
 
 	return &types.MsgCancelJobResponse{Success: true}, nil
+}
+
+// SubmitPublicJob allows staked users to submit free background jobs for public benefit
+// Requirements: minimum stake, posting fee (burned)
+// Job goes into queue, selected randomly when no paid jobs
+func (k msgServer) SubmitPublicJob(goCtx context.Context, msg *types.MsgSubmitPublicJob) (*types.MsgSubmitPublicJobResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	submitterAddr, err := sdk.AccAddressFromBech32(msg.Submitter)
+	if err != nil {
+		return nil, types.ErrUnauthorized
+	}
+
+	// Validate category
+	if !ValidCategories[msg.Category] {
+		return nil, fmt.Errorf("invalid category: %s", msg.Category)
+	}
+
+	// Check minimum stake requirement
+	// For now, check if user has minimum balance (in production, check delegations)
+	balance := k.bankKeeper.GetBalance(ctx, submitterAddr, "unexus")
+	if balance.Amount.Int64() < MinStakeForSubmission {
+		return nil, fmt.Errorf("insufficient stake: need %d, have %d", MinStakeForSubmission, balance.Amount.Int64())
+	}
+
+	// Charge and burn posting fee
+	postingFee := sdk.NewCoins(sdk.NewInt64Coin("unexus", PublicJobPostingFee))
+	err = k.bankKeeper.SendCoinsFromAccountToModule(ctx, submitterAddr, types.ModuleName, postingFee)
+	if err != nil {
+		return nil, fmt.Errorf("failed to charge posting fee: %w", err)
+	}
+
+	// Burn the posting fee
+	err = k.bankKeeper.BurnCoins(ctx, types.ModuleName, postingFee)
+	if err != nil {
+		return nil, fmt.Errorf("failed to burn posting fee: %w", err)
+	}
+
+	// Validate problem size meets minimum difficulty
+	minSize := k.GetCurrentProblemSize(ctx)
+	problemSize := int64(len(msg.ProblemData))
+	// Problem data for Ising model is size*size bytes
+	// So sqrt(problemSize) should be >= minSize
+	estimatedSpins := int64(1)
+	for estimatedSpins*estimatedSpins < problemSize {
+		estimatedSpins++
+	}
+	if estimatedSpins < minSize {
+		return nil, fmt.Errorf("problem too small: %d spins, minimum %d", estimatedSpins, minSize)
+	}
+
+	// Create job ID
+	height := ctx.BlockHeight()
+	jobID := fmt.Sprintf("pub_%d_%s", height, msg.ProblemHash[:8])
+
+	// Create the job (status = Queued, not Active)
+	job := types.Job{
+		Id:           jobID,
+		Customer:     msg.Submitter, // Submitter is the "customer" for public jobs
+		ProblemType:  msg.Category,
+		ProblemData:  msg.ProblemData,
+		ProblemHash:  msg.ProblemHash,
+		Threshold:    msg.Threshold,
+		Reward:       0, // No customer reward - emission only
+		Status:       types.JobStatusQueued,
+		BestEnergy:   0,
+		TotalShares:  0,
+		CreatedAt:    ctx.BlockTime().Unix(),
+		Deadline:     0, // Set when activated
+		IsBackground: true,
+	}
+
+	k.SetJob(ctx, job)
+
+	// Add to public job queue
+	k.AddToPublicJobQueue(ctx, jobID)
+	queueLen := k.GetPublicJobQueueLength(ctx)
+
+	ctx.Logger().Info("Public job submitted",
+		"job_id", jobID,
+		"submitter", msg.Submitter,
+		"category", msg.Category,
+		"title", msg.Title,
+		"queue_position", queueLen,
+		"posting_fee_burned", PublicJobPostingFee,
+	)
+
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			"public_job_submitted",
+			sdk.NewAttribute("job_id", jobID),
+			sdk.NewAttribute("submitter", msg.Submitter),
+			sdk.NewAttribute("category", msg.Category),
+			sdk.NewAttribute("title", msg.Title),
+			sdk.NewAttribute("queue_length", fmt.Sprintf("%d", queueLen)),
+			sdk.NewAttribute("ipfs_cid", msg.IpfsCid),
+		),
+	)
+
+	return &types.MsgSubmitPublicJobResponse{
+		JobId:         jobID,
+		QueuePosition: int64(queueLen),
+	}, nil
 }

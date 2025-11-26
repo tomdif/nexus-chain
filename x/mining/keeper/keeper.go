@@ -143,7 +143,7 @@ func (k Keeper) GetValidatorMiningRecord(ctx sdk.Context, valAddr sdk.ValAddress
 
 func (k Keeper) SetValidatorMiningRecord(ctx sdk.Context, record types.ValidatorMiningRecord) {
 	store := ctx.KVStore(k.storeKey)
-	valAddr, _ := sdk.ValAddressFromBech32(record.Validator)
+	valAddr, _ := sdk.ValAddressFromBech32(record.ValidatorAddr)
 	key := append(types.ValidatorRecordKeyPrefix, valAddr.Bytes()...)
 	bz := k.cdc.MustMarshal(&record)
 	store.Set(key, bz)

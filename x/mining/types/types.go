@@ -1,24 +1,6 @@
 package types
 
-import (
-	"time"
-)
-
-const (
-	ModuleName  = "mining"
-	StoreKey    = ModuleName
-	MemStoreKey = "mem_" + ModuleName
-	RouterKey   = ModuleName
-)
-
-var (
-	JobKeyPrefix             = []byte{0x01}
-	CheckpointKeyPrefix      = []byte{0x02}
-	ShareKeyPrefix           = []byte{0x03}
-	ValidatorRecordKeyPrefix = []byte{0x04}
-	LastCheckpointIDKey      = []byte{0x05}
-)
-
+// Job Status
 type JobStatus uint32
 
 const (
@@ -27,6 +9,7 @@ const (
 	JobStatusCompleted JobStatus = 2
 	JobStatusExpired   JobStatus = 3
 	JobStatusCancelled JobStatus = 4
+	JobStatusQueued    JobStatus = 5
 )
 
 type ProofType uint32
@@ -51,6 +34,9 @@ type Job struct {
 	CreatedAt    int64     `protobuf:"varint,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	Deadline     int64     `protobuf:"varint,13,opt,name=deadline,proto3" json:"deadline,omitempty"`
 	IsBackground bool      `protobuf:"varint,14,opt,name=is_background,json=isBackground,proto3" json:"is_background,omitempty"`
+	PriorityFee  int64     `protobuf:"varint,15,opt,name=priority_fee,json=priorityFee,proto3" json:"priority_fee,omitempty"`
+	Title        string    `protobuf:"bytes,16,opt,name=title,proto3" json:"title,omitempty"`
+	IpfsCid      string    `protobuf:"bytes,17,opt,name=ipfs_cid,json=ipfsCid,proto3" json:"ipfs_cid,omitempty"`
 }
 
 func (j *Job) Reset()         { *j = Job{} }
@@ -61,53 +47,23 @@ type Checkpoint struct {
 	Id               uint64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	StartHeight      int64  `protobuf:"varint,2,opt,name=start_height,json=startHeight,proto3" json:"start_height,omitempty"`
 	EndHeight        int64  `protobuf:"varint,3,opt,name=end_height,json=endHeight,proto3" json:"end_height,omitempty"`
-	JobsCompleted    uint64 `protobuf:"varint,4,opt,name=jobs_completed,json=jobsCompleted,proto3" json:"jobs_completed,omitempty"`
-	TotalShares      int64  `protobuf:"varint,5,opt,name=total_shares,json=totalShares,proto3" json:"total_shares,omitempty"`
-	MinerRewards     int64  `protobuf:"varint,6,opt,name=miner_rewards,json=minerRewards,proto3" json:"miner_rewards,omitempty"`
-	ValidatorRewards int64  `protobuf:"varint,7,opt,name=validator_rewards,json=validatorRewards,proto3" json:"validator_rewards,omitempty"`
-	StateRoot        string `protobuf:"bytes,8,opt,name=state_root,json=stateRoot,proto3" json:"state_root,omitempty"`
-	Timestamp        int64  `protobuf:"varint,9,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	ValidatorRewards int64  `protobuf:"varint,4,opt,name=validator_rewards,json=validatorRewards,proto3" json:"validator_rewards,omitempty"`
+	Timestamp        int64  `protobuf:"varint,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 }
 
 func (c *Checkpoint) Reset()         { *c = Checkpoint{} }
 func (c *Checkpoint) String() string { return "" }
 func (c *Checkpoint) ProtoMessage()  {}
 
+// ValidatorMiningRecord tracks a validator's mining activity
 type ValidatorMiningRecord struct {
-	Validator     string    `protobuf:"bytes,1,opt,name=validator,proto3" json:"validator,omitempty"`
-	LastProofTime time.Time `protobuf:"bytes,2,opt,name=last_proof_time,json=lastProofTime,proto3,stdtime" json:"last_proof_time"`
-	TotalProofs   uint64    `protobuf:"varint,3,opt,name=total_proofs,json=totalProofs,proto3" json:"total_proofs,omitempty"`
-	TotalShares   int64     `protobuf:"varint,4,opt,name=total_shares,json=totalShares,proto3" json:"total_shares,omitempty"`
-	IsEligible    bool      `protobuf:"varint,5,opt,name=is_eligible,json=isEligible,proto3" json:"is_eligible,omitempty"`
+	ValidatorAddr  string `protobuf:"bytes,1,opt,name=validator_addr,json=validatorAddr,proto3" json:"validator_addr,omitempty"`
+	TotalShares    int64  `protobuf:"varint,2,opt,name=total_shares,json=totalShares,proto3" json:"total_shares,omitempty"`
+	TotalRewards   int64  `protobuf:"varint,3,opt,name=total_rewards,json=totalRewards,proto3" json:"total_rewards,omitempty"`
+	JobsCompleted  int64  `protobuf:"varint,4,opt,name=jobs_completed,json=jobsCompleted,proto3" json:"jobs_completed,omitempty"`
+	LastActiveTime int64  `protobuf:"varint,5,opt,name=last_active_time,json=lastActiveTime,proto3" json:"last_active_time,omitempty"`
 }
 
 func (v *ValidatorMiningRecord) Reset()         { *v = ValidatorMiningRecord{} }
-func (v *ValidatorMiningRecord) String() string { return v.Validator }
+func (v *ValidatorMiningRecord) String() string { return v.ValidatorAddr }
 func (v *ValidatorMiningRecord) ProtoMessage()  {}
-
-type ShareRecord struct {
-	Miner     string `protobuf:"bytes,1,opt,name=miner,proto3" json:"miner,omitempty"`
-	JobId     string `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	Shares    int64  `protobuf:"varint,3,opt,name=shares,proto3" json:"shares,omitempty"`
-	Timestamp int64  `protobuf:"varint,4,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-}
-
-func (s *ShareRecord) Reset()         { *s = ShareRecord{} }
-func (s *ShareRecord) String() string { return s.Miner }
-func (s *ShareRecord) ProtoMessage()  {}
-
-type MiningProof struct {
-	Miner        string    `protobuf:"bytes,1,opt,name=miner,proto3" json:"miner,omitempty"`
-	JobId        string    `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	Energy       int64     `protobuf:"varint,3,opt,name=energy,proto3" json:"energy,omitempty"`
-	Proof        []byte    `protobuf:"bytes,4,opt,name=proof,proto3" json:"proof,omitempty"`
-	ProofType    ProofType `protobuf:"varint,5,opt,name=proof_type,json=proofType,proto3,casttype=ProofType" json:"proof_type,omitempty"`
-	SolutionHash string    `protobuf:"bytes,6,opt,name=solution_hash,json=solutionHash,proto3" json:"solution_hash,omitempty"`
-	Height       int64     `protobuf:"varint,7,opt,name=height,proto3" json:"height,omitempty"`
-	Timestamp    int64     `protobuf:"varint,8,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	SharesEarned int64     `protobuf:"varint,9,opt,name=shares_earned,json=sharesEarned,proto3" json:"shares_earned,omitempty"`
-}
-
-func (m *MiningProof) Reset()         { *m = MiningProof{} }
-func (m *MiningProof) String() string { return m.Miner }
-func (m *MiningProof) ProtoMessage()  {}
