@@ -13,6 +13,10 @@ type QueryParamsResponse struct {
 	Params Params `protobuf:"bytes,1,opt,name=params,proto3" json:"params"`
 }
 
+func (m *QueryParamsResponse) Reset()         { *m = QueryParamsResponse{} }
+func (m *QueryParamsResponse) String() string { return "QueryParamsResponse" }
+func (m *QueryParamsResponse) ProtoMessage()  {}
+
 type QueryJobRequest struct {
 	JobId string `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id"`
 }
@@ -21,6 +25,10 @@ type QueryJobResponse struct {
 	Job Job `protobuf:"bytes,1,opt,name=job,proto3" json:"job"`
 }
 
+func (m *QueryJobResponse) Reset()         { *m = QueryJobResponse{} }
+func (m *QueryJobResponse) String() string { return "QueryJobResponse" }
+func (m *QueryJobResponse) ProtoMessage()  {}
+
 type QueryJobsRequest struct {
 	Status uint32 `protobuf:"varint,1,opt,name=status,proto3" json:"status"`
 }
@@ -28,6 +36,10 @@ type QueryJobsRequest struct {
 type QueryJobsResponse struct {
 	Jobs []Job `protobuf:"bytes,1,rep,name=jobs,proto3" json:"jobs"`
 }
+
+func (m *QueryJobsResponse) Reset()         { *m = QueryJobsResponse{} }
+func (m *QueryJobsResponse) String() string { return "QueryJobsResponse" }
+func (m *QueryJobsResponse) ProtoMessage()  {}
 
 type QueryMinerSharesRequest struct {
 	Miner string `protobuf:"bytes,1,opt,name=miner,proto3" json:"miner"`
@@ -40,18 +52,26 @@ type QueryMinerSharesResponse struct {
 	Shares int64  `protobuf:"varint,3,opt,name=shares,proto3" json:"shares"`
 }
 
+func (m *QueryMinerSharesResponse) Reset()         { *m = QueryMinerSharesResponse{} }
+func (m *QueryMinerSharesResponse) String() string { return "QueryMinerSharesResponse" }
+func (m *QueryMinerSharesResponse) ProtoMessage()  {}
+
 type QueryMinerStatsRequest struct {
 	MinerAddress string `protobuf:"bytes,1,opt,name=miner_address,json=minerAddress,proto3" json:"miner_address"`
 }
 
 type QueryMinerStatsResponse struct {
-	MinerAddress    string        `protobuf:"bytes,1,opt,name=miner_address,json=minerAddress,proto3" json:"miner_address"`
-	TotalShares     int64         `protobuf:"varint,2,opt,name=total_shares,json=totalShares,proto3" json:"total_shares"`
-	PendingRewards  sdk.Coins     `protobuf:"bytes,3,rep,name=pending_rewards,json=pendingRewards,proto3,castrepeated=github.com/cosmos/cosmos-sdk/types.Coins" json:"pending_rewards"`
-	JobsParticipated int64        `protobuf:"varint,4,opt,name=jobs_participated,json=jobsParticipated,proto3" json:"jobs_participated"`
-	TotalClaimed    sdk.Coins     `protobuf:"bytes,5,rep,name=total_claimed,json=totalClaimed,proto3,castrepeated=github.com/cosmos/cosmos-sdk/types.Coins" json:"total_claimed"`
-	ActiveJobs      []MinerJobInfo `protobuf:"bytes,6,rep,name=active_jobs,json=activeJobs,proto3" json:"active_jobs"`
+	MinerAddress     string         `protobuf:"bytes,1,opt,name=miner_address,json=minerAddress,proto3" json:"miner_address"`
+	TotalShares      int64          `protobuf:"varint,2,opt,name=total_shares,json=totalShares,proto3" json:"total_shares"`
+	PendingRewards   sdk.Coins      `protobuf:"bytes,3,rep,name=pending_rewards,json=pendingRewards,proto3,castrepeated=github.com/cosmos/cosmos-sdk/types.Coins" json:"pending_rewards"`
+	JobsParticipated int64          `protobuf:"varint,4,opt,name=jobs_participated,json=jobsParticipated,proto3" json:"jobs_participated"`
+	TotalClaimed     sdk.Coins      `protobuf:"bytes,5,rep,name=total_claimed,json=totalClaimed,proto3,castrepeated=github.com/cosmos/cosmos-sdk/types.Coins" json:"total_claimed"`
+	ActiveJobs       []MinerJobInfo `protobuf:"bytes,6,rep,name=active_jobs,json=activeJobs,proto3" json:"active_jobs"`
 }
+
+func (m *QueryMinerStatsResponse) Reset()         { *m = QueryMinerStatsResponse{} }
+func (m *QueryMinerStatsResponse) String() string { return "QueryMinerStatsResponse" }
+func (m *QueryMinerStatsResponse) ProtoMessage()  {}
 
 type MinerJobInfo struct {
 	JobId       string `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id"`
@@ -72,6 +92,10 @@ type QueryActiveJobResponse struct {
 	ProblemSize   int64 `protobuf:"varint,3,opt,name=problem_size,json=problemSize,proto3" json:"problem_size"`
 }
 
+func (m *QueryActiveJobResponse) Reset()         { *m = QueryActiveJobResponse{} }
+func (m *QueryActiveJobResponse) String() string { return "QueryActiveJobResponse" }
+func (m *QueryActiveJobResponse) ProtoMessage()  {}
+
 type QueryQueueStatusRequest struct{}
 
 type QueryQueueStatusResponse struct {
@@ -80,6 +104,10 @@ type QueryQueueStatusResponse struct {
 	NextPaidJobs      []QueuedJobInfo `protobuf:"bytes,3,rep,name=next_paid_jobs,json=nextPaidJobs,proto3" json:"next_paid_jobs"`
 	NextPublicJobs    []string        `protobuf:"bytes,4,rep,name=next_public_jobs,json=nextPublicJobs,proto3" json:"next_public_jobs"`
 }
+
+func (m *QueryQueueStatusResponse) Reset()         { *m = QueryQueueStatusResponse{} }
+func (m *QueryQueueStatusResponse) String() string { return "QueryQueueStatusResponse" }
+func (m *QueryQueueStatusResponse) ProtoMessage()  {}
 
 type QueuedJobInfo struct {
 	JobId       string `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id"`
@@ -95,15 +123,19 @@ func (q *QueuedJobInfo) ProtoMessage()  {}
 type QueryEmissionInfoRequest struct{}
 
 type QueryEmissionInfoResponse struct {
-	CurrentEpoch       int32  `protobuf:"varint,1,opt,name=current_epoch,json=currentEpoch,proto3" json:"current_epoch"`
-	EmissionRate       int64  `protobuf:"varint,2,opt,name=emission_rate,json=emissionRate,proto3" json:"emission_rate"`
-	EmissionEscrow     int64  `protobuf:"varint,3,opt,name=emission_escrow,json=emissionEscrow,proto3" json:"emission_escrow"`
-	GenesisTime        int64  `protobuf:"varint,4,opt,name=genesis_time,json=genesisTime,proto3" json:"genesis_time"`
-	MinutesIntoEpoch   int64  `protobuf:"varint,5,opt,name=minutes_into_epoch,json=minutesIntoEpoch,proto3" json:"minutes_into_epoch"`
-	MinutesUntilNext   int64  `protobuf:"varint,6,opt,name=minutes_until_next,json=minutesUntilNext,proto3" json:"minutes_until_next"`
-	EpochDuration      int64  `protobuf:"varint,7,opt,name=epoch_duration,json=epochDuration,proto3" json:"epoch_duration"`
-	NextEpochRate      int64  `protobuf:"varint,8,opt,name=next_epoch_rate,json=nextEpochRate,proto3" json:"next_epoch_rate"`
+	CurrentEpoch     int32 `protobuf:"varint,1,opt,name=current_epoch,json=currentEpoch,proto3" json:"current_epoch"`
+	EmissionRate     int64 `protobuf:"varint,2,opt,name=emission_rate,json=emissionRate,proto3" json:"emission_rate"`
+	EmissionEscrow   int64 `protobuf:"varint,3,opt,name=emission_escrow,json=emissionEscrow,proto3" json:"emission_escrow"`
+	GenesisTime      int64 `protobuf:"varint,4,opt,name=genesis_time,json=genesisTime,proto3" json:"genesis_time"`
+	MinutesIntoEpoch int64 `protobuf:"varint,5,opt,name=minutes_into_epoch,json=minutesIntoEpoch,proto3" json:"minutes_into_epoch"`
+	MinutesUntilNext int64 `protobuf:"varint,6,opt,name=minutes_until_next,json=minutesUntilNext,proto3" json:"minutes_until_next"`
+	EpochDuration    int64 `protobuf:"varint,7,opt,name=epoch_duration,json=epochDuration,proto3" json:"epoch_duration"`
+	NextEpochRate    int64 `protobuf:"varint,8,opt,name=next_epoch_rate,json=nextEpochRate,proto3" json:"next_epoch_rate"`
 }
+
+func (m *QueryEmissionInfoResponse) Reset()         { *m = QueryEmissionInfoResponse{} }
+func (m *QueryEmissionInfoResponse) String() string { return "QueryEmissionInfoResponse" }
+func (m *QueryEmissionInfoResponse) ProtoMessage()  {}
 
 type QueryValidatorMiningRecordRequest struct {
 	Validator string `protobuf:"bytes,1,opt,name=validator,proto3" json:"validator"`
@@ -113,6 +145,12 @@ type QueryValidatorMiningRecordResponse struct {
 	Record ValidatorMiningRecord `protobuf:"bytes,1,opt,name=record,proto3" json:"record"`
 }
 
+func (m *QueryValidatorMiningRecordResponse) Reset() { *m = QueryValidatorMiningRecordResponse{} }
+func (m *QueryValidatorMiningRecordResponse) String() string {
+	return "QueryValidatorMiningRecordResponse"
+}
+func (m *QueryValidatorMiningRecordResponse) ProtoMessage() {}
+
 type QueryCheckpointRequest struct {
 	Id uint64 `protobuf:"varint,1,opt,name=id,proto3" json:"id"`
 }
@@ -121,11 +159,19 @@ type QueryCheckpointResponse struct {
 	Checkpoint Checkpoint `protobuf:"bytes,1,opt,name=checkpoint,proto3" json:"checkpoint"`
 }
 
+func (m *QueryCheckpointResponse) Reset()         { *m = QueryCheckpointResponse{} }
+func (m *QueryCheckpointResponse) String() string { return "QueryCheckpointResponse" }
+func (m *QueryCheckpointResponse) ProtoMessage()  {}
+
 type QueryLatestCheckpointRequest struct{}
 
 type QueryLatestCheckpointResponse struct {
 	Checkpoint Checkpoint `protobuf:"bytes,1,opt,name=checkpoint,proto3" json:"checkpoint"`
 }
+
+func (m *QueryLatestCheckpointResponse) Reset()         { *m = QueryLatestCheckpointResponse{} }
+func (m *QueryLatestCheckpointResponse) String() string { return "QueryLatestCheckpointResponse" }
+func (m *QueryLatestCheckpointResponse) ProtoMessage()  {}
 
 // Message responses
 type MsgPostJobResponse struct {

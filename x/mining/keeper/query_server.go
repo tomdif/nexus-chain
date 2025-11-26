@@ -54,7 +54,7 @@ func (q queryServer) MinerShares(goCtx context.Context, req *types.QueryMinerSha
 	if err != nil {
 		return nil, err
 	}
-	shares := q.Keeper.GetShares(ctx, miner, req.JobI)
+	shares := q.Keeper.GetShares(ctx, miner, req.JobId)
 	return &types.QueryMinerSharesResponse{
 		Miner:  req.Miner,
 		JobId:  req.JobId,
@@ -271,7 +271,7 @@ func (q queryServer) LatestCheckpoint(goCtx context.Context, req *types.QueryLat
 	}
 	checkpoint, found := q.Keeper.GetCheckpoint(ctx, lastID)
 	if !found {
-		return nil, types.ErrCheckpointNotFound
+		return nil, types.ErrCheckp ointNotFound
 	}
 	return &types.QueryLatestCheckpointResponse{Checkpoint: checkpoint}, nil
 }
