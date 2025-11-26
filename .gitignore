@@ -1,2 +1,3 @@
-nexusd
+/nexusd
 *.log
+.aider*
