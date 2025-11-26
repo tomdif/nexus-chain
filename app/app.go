@@ -39,6 +39,7 @@ import (
 	miningmodule "nexus/x/mining"
 	miningkeeper "nexus/x/mining/keeper"
 	miningtypes "nexus/x/mining/types"
+	nexusante "nexus/app/ante"
 )
 
 const (
@@ -214,6 +215,19 @@ func New(
 	app.ModuleManager.RegisterServices(app.configurator())
 
 	app.MountKVStores(keys)
+
+	// Set up custom AnteHandler with 50% fee burn
+	anteHandler, err := nexusante.NewAnteHandler(nexusante.HandlerOptions{
+		AccountKeeper:  app.AccountKeeper,
+		BankKeeper:     app.BankKeeper,
+		FeegrantKeeper: nil,
+		SigGasConsumer: nil,
+		TxFeeChecker:   nil,
+	})
+	if err != nil {
+		panic(err)
+	}
+	app.SetAnteHandler(anteHandler)
 
 	app.SetInitChainer(app.InitChainer)
 	app.SetPreBlocker(app.PreBlocker)
