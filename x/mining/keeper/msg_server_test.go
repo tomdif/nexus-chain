@@ -15,6 +15,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"nexus/x/mining/keeper"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"nexus/x/mining/types"
 )
 
@@ -247,4 +248,234 @@ func TestValidatorRewardPoolAccumulation(t *testing.T) {
 	} else {
 		t.Logf("Validator pool accumulated correctly: %d (3 x 196K)", pool)
 	}
+}
+
+func setupKeeperWithBothKeepers(t *testing.T, bankKeeper *MockBankKeeper, stakingKeeper *MockStakingKeeper) (keeper.Keeper, sdk.Context) {
+	storeKey := storetypes.NewKVStoreKey(types.StoreKey)
+	memKey := storetypes.NewMemoryStoreKey("mem_mining")
+	db := dbm.NewMemDB()
+	stateStore := store.NewCommitMultiStore(db, log.NewNopLogger(), metrics.NewNoOpMetrics())
+	stateStore.MountStoreWithDB(storeKey, storetypes.StoreTypeIAVL, db)
+	stateStore.MountStoreWithDB(memKey, storetypes.StoreTypeMemory, nil)
+	if err := stateStore.LoadLatestVersion(); err != nil {
+		t.Fatal(err)
+	}
+	registry := codectypes.NewInterfaceRegistry()
+	cdc := codec.NewProtoCodec(registry)
+	ctx := sdk.NewContext(stateStore, cmtproto.Header{Height: 1}, false, log.NewNopLogger())
+	k := keeper.NewKeeper(cdc, storeKey, memKey, stakingKeeper, bankKeeper, "authority")
+	k.SetParams(ctx, types.DefaultParams())
+	return k, ctx
+}
+
+func TestValidatorRewardDistribution(t *testing.T) {
+	bankKeeper := NewMockBankKeeper()
+	stakingKeeper := NewMockStakingKeeper()
+	k, ctx := setupKeeperWithBothKeepers(t, bankKeeper, stakingKeeper)
+
+	// Setup 3 validators with different stakes
+	// Val1: 50% stake, Val2: 30% stake, Val3: 20% stake
+	val1Bytes := []byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+	val1Addr := sdk.ValAddress(val1Bytes).String()
+	val2Bytes := []byte{2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2}
+	val2Addr := sdk.ValAddress(val2Bytes).String()
+	val3Bytes := []byte{3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3}
+	val3Addr := sdk.ValAddress(val3Bytes).String()
+	
+	stakingKeeper.AddValidator(val1Addr, 500000) // 50%
+	stakingKeeper.AddValidator(val2Addr, 300000) // 30%
+	stakingKeeper.AddValidator(val3Addr, 200000) // 20%
+
+	t.Logf("=== VALIDATOR REWARD DISTRIBUTION ===")
+	t.Logf("Val1: 500K stake (50%%)")
+	t.Logf("Val2: 300K stake (30%%)")
+	t.Logf("Val3: 200K stake (20%%)")
+
+	// Set up reward pool (simulating accumulated validator shares)
+	rewardPool := int64(1000000) // 1M to distribute
+	k.SetValidatorRewardPool(ctx, rewardPool)
+	
+	// Fund the module account so it can distribute
+	bankKeeper.SetModuleBalance(types.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("unexus", rewardPool)))
+
+	t.Logf("Reward pool: %d", rewardPool)
+	t.Logf("Module balance: %s", bankKeeper.ModuleBalances[types.ModuleName])
+
+	// Trigger distribution
+	distributed, err := k.DistributeValidatorRewards(ctx, rewardPool)
+	if err != nil {
+		t.Fatalf("Distribution failed: %v", err)
+	}
+
+	// Check pool is cleared
+	poolAfter := k.GetValidatorRewardPool(ctx)
+	if poolAfter != 0 {
+		t.Errorf("Pool should be 0 after distribution, got %d", poolAfter)
+	}
+
+	// Check validator balances
+	val1AccAddr, _ := sdk.ValAddressFromBech32(val1Addr)
+	val2AccAddr, _ := sdk.ValAddressFromBech32(val2Addr)
+	val3AccAddr, _ := sdk.ValAddressFromBech32(val3Addr)
+
+	val1Bal := bankKeeper.Balances[sdk.AccAddress(val1AccAddr).String()].AmountOf("unexus").Int64()
+	val2Bal := bankKeeper.Balances[sdk.AccAddress(val2AccAddr).String()].AmountOf("unexus").Int64()
+	val3Bal := bankKeeper.Balances[sdk.AccAddress(val3AccAddr).String()].AmountOf("unexus").Int64()
+
+	t.Logf("\nDistribution results:")
+	t.Logf("  Val1 (50%%): %d", val1Bal)
+	t.Logf("  Val2 (30%%): %d", val2Bal)
+	t.Logf("  Val3 (20%%): %d", val3Bal)
+	t.Logf("  Total distributed: %d", distributed)
+
+	// Expected: 500K, 300K, 200K
+	if val1Bal != 500000 {
+		t.Errorf("Val1: expected 500000, got %d", val1Bal)
+	}
+	if val2Bal != 300000 {
+		t.Errorf("Val2: expected 300000, got %d", val2Bal)
+	}
+	if val3Bal != 200000 {
+		t.Errorf("Val3: expected 200000, got %d", val3Bal)
+	}
+
+	// Module should be empty
+	moduleBal := bankKeeper.ModuleBalances[types.ModuleName].AmountOf("unexus").Int64()
+	if moduleBal != 0 {
+		t.Errorf("Module should be empty, got %d", moduleBal)
+	}
+
+	t.Logf("\n✓ Validators received rewards proportional to stake!")
+}
+
+func TestMockStakingKeeperDirect(t *testing.T) {
+	stakingKeeper := NewMockStakingKeeper()
+	stakingKeeper.AddValidator("nexusvaloper1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqnrql8a", 500000)
+	stakingKeeper.AddValidator("nexusvaloper1qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqfhvms4", 300000)
+	
+	t.Logf("TotalBonded: %d", stakingKeeper.TotalBonded)
+	t.Logf("Validators: %d", len(stakingKeeper.Validators))
+	
+	total, err := stakingKeeper.TotalBondedTokens(nil)
+	if err != nil {
+		t.Fatalf("TotalBondedTokens error: %v", err)
+	}
+	t.Logf("TotalBondedTokens returned: %s", total.String())
+	
+	count := 0
+	err = stakingKeeper.IterateBondedValidatorsByPower(nil, func(index int64, val stakingtypes.ValidatorI) bool {
+		t.Logf("Validator %d: addr=%s tokens=%s", index, val.GetOperator(), val.GetBondedTokens().String())
+		count++
+		return false
+	})
+	if err != nil {
+		t.Fatalf("IterateBondedValidatorsByPower error: %v", err)
+	}
+	t.Logf("Iterated %d validators", count)
+}
+
+func TestDistributeWithDebug(t *testing.T) {
+	bankKeeper := NewMockBankKeeper()
+	stakingKeeper := NewMockStakingKeeper()
+	
+	// Add validators BEFORE creating keeper
+	val1Bytes := []byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+	val1Addr := sdk.ValAddress(val1Bytes).String()
+	stakingKeeper.AddValidator(val1Addr, 1000000)
+	
+	t.Logf("StakingKeeper before setup: TotalBonded=%d, Validators=%d", stakingKeeper.TotalBonded, len(stakingKeeper.Validators))
+	
+	k, ctx := setupKeeperWithBothKeepers(t, bankKeeper, stakingKeeper)
+	
+	t.Logf("StakingKeeper after setup: TotalBonded=%d, Validators=%d", stakingKeeper.TotalBonded, len(stakingKeeper.Validators))
+	
+	// Set up reward pool
+	rewardPool := int64(1000000)
+	k.SetValidatorRewardPool(ctx, rewardPool)
+	bankKeeper.SetModuleBalance(types.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("unexus", rewardPool)))
+	
+	t.Logf("Pool set: %d", k.GetValidatorRewardPool(ctx))
+	t.Logf("Module balance: %s", bankKeeper.ModuleBalances[types.ModuleName])
+	
+	// Call distribution
+	distributed, err := k.DistributeValidatorRewards(ctx, rewardPool)
+	t.Logf("DistributeValidatorRewards returned: distributed=%d, err=%v", distributed, err)
+	
+	// Check validator balance
+	val1AccAddr, _ := sdk.ValAddressFromBech32(val1Addr)
+	val1Bal := bankKeeper.Balances[sdk.AccAddress(val1AccAddr).String()].AmountOf("unexus").Int64()
+	t.Logf("Val1 balance: %d", val1Bal)
+	
+	poolAfter := k.GetValidatorRewardPool(ctx)
+	t.Logf("Pool after: %d", poolAfter)
+}
+
+func TestDistributeWithMoreDebug(t *testing.T) {
+	bankKeeper := NewMockBankKeeper()
+	stakingKeeper := NewMockStakingKeeper()
+	
+	val1Bytes := []byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+	val1Addr := sdk.ValAddress(val1Bytes).String()
+	stakingKeeper.AddValidator(val1Addr, 1000000)
+	
+	// Create keeper manually to check
+	storeKey := storetypes.NewKVStoreKey(types.StoreKey)
+	memKey := storetypes.NewMemoryStoreKey("mem_mining")
+	db := dbm.NewMemDB()
+	stateStore := store.NewCommitMultiStore(db, log.NewNopLogger(), metrics.NewNoOpMetrics())
+	stateStore.MountStoreWithDB(storeKey, storetypes.StoreTypeIAVL, db)
+	stateStore.MountStoreWithDB(memKey, storetypes.StoreTypeMemory, nil)
+	stateStore.LoadLatestVersion()
+	registry := codectypes.NewInterfaceRegistry()
+	cdc := codec.NewProtoCodec(registry)
+	ctx := sdk.NewContext(stateStore, cmtproto.Header{Height: 1}, false, log.NewNopLogger())
+	
+	// Check that interface is satisfied
+	var sk types.StakingKeeper = stakingKeeper
+	var bk types.BankKeeper = bankKeeper
+	t.Logf("StakingKeeper interface: %T, nil=%v", sk, sk == nil)
+	t.Logf("BankKeeper interface: %T, nil=%v", bk, bk == nil)
+	
+	k := keeper.NewKeeper(cdc, storeKey, memKey, sk, bk, "authority")
+	k.SetParams(ctx, types.DefaultParams())
+	
+	// Test TotalBondedTokens directly through keeper's staking keeper
+	total, err := sk.TotalBondedTokens(ctx)
+	t.Logf("Direct TotalBondedTokens: %s, err=%v", total.String(), err)
+	
+	// Set up and distribute
+	rewardPool := int64(1000000)
+	k.SetValidatorRewardPool(ctx, rewardPool)
+	bankKeeper.SetModuleBalance(types.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("unexus", rewardPool)))
+	
+	distributed, err := k.DistributeValidatorRewards(ctx, rewardPool)
+	t.Logf("Distributed: %d, err=%v", distributed, err)
+	
+	val1AccAddr, _ := sdk.ValAddressFromBech32(val1Addr)
+	val1Bal := bankKeeper.Balances[sdk.AccAddress(val1AccAddr).String()].AmountOf("unexus").Int64()
+	t.Logf("Val1 balance after: %d", val1Bal)
+}
+
+func TestValidatorAddressConversion(t *testing.T) {
+	// Test the validator address conversion
+	val1Bytes := []byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+	val1Addr := sdk.ValAddress(val1Bytes).String()
+	
+	valAddr, err := sdk.ValAddressFromBech32(val1Addr)
+	t.Logf("ValAddressFromBech32: addr=%v, err=%v", valAddr, err)
+	
+	if err == nil {
+		accAddr := sdk.AccAddress(valAddr)
+		t.Logf("AccAddress: %s", accAddr.String())
+	}
+	
+	// Try creating a valid address
+	// Generate from bytes
+	valBytes := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
+	valAddr2 := sdk.ValAddress(valBytes)
+	t.Logf("Generated ValAddress: %s", valAddr2.String())
+	
+	// Now convert back
+	valAddr3, err := sdk.ValAddressFromBech32(valAddr2.String())
+	t.Logf("Converted back: addr=%v, err=%v", valAddr3, err)
 }

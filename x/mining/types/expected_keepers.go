@@ -11,6 +11,10 @@ import (
 type StakingKeeper interface {
 	GetValidator(ctx context.Context, addr sdk.ValAddress) (stakingtypes.Validator, error)
 	TotalBondedTokens(ctx context.Context) (math.Int, error)
+	// IterateBondedValidatorsByPower iterates through bonded validators by power
+	IterateBondedValidatorsByPower(ctx context.Context, fn func(index int64, validator stakingtypes.ValidatorI) (stop bool)) error
+	// GetValidatorByConsAddr returns validator by consensus address
+	GetValidatorByConsAddr(ctx context.Context, consAddr sdk.ConsAddress) (stakingtypes.Validator, error)
 }
 
 type BankKeeper interface {
