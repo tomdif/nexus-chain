@@ -17,8 +17,8 @@ import (
 	serverconfig "github.com/cosmos/cosmos-sdk/server/config"
 	"github.com/spf13/cobra"
 
+	abcitypes "github.com/cometbft/cometbft/abci/types"
 	cmtcfg "github.com/cometbft/cometbft/config"
-	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
 	cmttypes "github.com/cometbft/cometbft/types"
@@ -191,7 +191,7 @@ func StartCmd() *cobra.Command {
 			ctx = ctx.WithBlockHeight(0).WithBlockTime(genDoc.GenesisTime)
 
 			// Initialize chain
-			_, err = nexusApp.InitChainer(ctx, &cmtproto.RequestInitChain{
+			_, err = nexusApp.InitChainer(ctx, &abcitypes.RequestInitChain{
 				Time:            genDoc.GenesisTime,
 				ChainId:         genDoc.ChainID,
 				ConsensusParams: genDoc.ConsensusParams,
@@ -247,7 +247,7 @@ func StartCmd() *cobra.Command {
 					ctx = ctx.WithBlockHeight(height).WithBlockTime(blockTime)
 
 					// PreBlock
-					_, err := nexusApp.PreBlocker(ctx, &cmtproto.RequestFinalizeBlock{
+					_, err := nexusApp.PreBlocker(ctx, &abcitypes.RequestFinalizeBlock{
 						Height: height,
 						Time:   blockTime,
 					})
