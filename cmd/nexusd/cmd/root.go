@@ -364,7 +364,7 @@ func StartCmd() *cobra.Command {
 			consensusParamsProto := genDoc.ConsensusParams.ToProto()
 
 			// Initialize chain with genesis using InitChain
-			_, err = nexusApp.Init Chain(&abcitypes.RequestInitChain{
+			_, err = nexusApp.InitChain(&abcitypes.RequestInitChain{
 				Time:            genDoc.GenesisTime,
 				ChainId:         genDoc.ChainID,
 				ConsensusParams: &consensusParamsProto,
