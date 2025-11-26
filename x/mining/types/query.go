@@ -241,7 +241,7 @@ func (q *queryClient) ActiveJob(ctx context.Context, req *QueryActiveJobRequest)
 	return nil, nil
 }
 
-func (q *queryClient) QueueStatus(ctx context.Context, req *QueryQueueStatusRequest) (*QueryQueue StatusResponse, error) {
+func (q *queryClient) QueueStatus(ctx context.Context, req *QueryQueueStatusRequest) (*QueryQueueStatusResponse, error) {
 	return nil, nil
 }
 
