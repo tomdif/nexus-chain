@@ -335,8 +335,13 @@ func StartCmd() *cobra.Command {
 			os.MkdirAll(configDir, 0755)
 			os.MkdirAll(dataDir, 0755)
 
-			// Create CometBFT config with root set
-			cmtConfig := cmtcfg.DefaultConfig()
+			// Load CometBFT config from file (respects custom ports)
+			configFile := filepath.Join(configDir, "config.toml")
+			cmtConfig, err := cmtcfg.LoadTomlConfigFile(configFile)
+			if err != nil {
+				// Fallback to default if config doesn't exist
+				cmtConfig = cmtcfg.DefaultConfig()
+			}
 			cmtConfig.SetRoot(home)
 
 			// Load genesis document to get chain ID
