@@ -360,21 +360,11 @@ func StartCmd() *cobra.Command {
 				return err
 			}
 
-			// Initialize chain with genesis
-			var genesisState map[string]json.RawMessage
-			if err := json.Unmarshal(genDoc.AppState, &genesisState); err != nil {
-				return err
-			}
-
-			// Create initial context
-			ctx := nexusApp.BaseApp.NewContext(true)
-			ctx = ctx.WithBlockHeight(0).WithBlockTime(genDoc.GenesisTime)
-
 			// Convert ConsensusParams to proto type
 			consensusParamsProto := genDoc.ConsensusParams.ToProto()
 
-			// Initialize chain
-			_, err = nexusApp.InitChainer(ctx, &abcitypes.RequestInitChain{
+			// Initialize chain with genesis using InitChain
+			_, err = nexusApp.InitChain(&abcitypes.RequestInitChain{
 				Time:            genDoc.GenesisTime,
 				ChainId:         genDoc.ChainID,
 				ConsensusParams: &consensusParamsProto,
@@ -384,6 +374,9 @@ func StartCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			// Commit the genesis block
+			nexusApp.Commit()
 
 			// Load node key for display
 			nodeKeyFile := filepath.Join(configDir, "node_key.json")
@@ -422,35 +415,21 @@ func StartCmd() *cobra.Command {
 					return nil
 
 				case blockTime := <-ticker.C:
-					// Create block context
-					ctx := nexusApp.BaseApp.NewContext(false)
-					ctx = ctx.WithBlockHeight(height).WithBlockTime(blockTime)
-
-					// PreBlock
-					_, err := nexusApp.PreBlocker(ctx, &abcitypes.RequestFinalizeBlock{
+					// Create FinalizeBlock request
+					req := &abcitypes.RequestFinalizeBlock{
 						Height: height,
 						Time:   blockTime,
-					})
+						Hash:   []byte{}, // Empty hash for test mode
+					}
+
+					// Process the block through FinalizeBlock
+					_, err := nexusApp.FinalizeBlock(req)
 					if err != nil {
-						logger.Error("PreBlock failed", "height", height, "error", err)
+						logger.Error("FinalizeBlock failed", "height", height, "error", err)
 						continue
 					}
 
-					// BeginBlock
-					_, err = nexusApp.BeginBlocker(ctx)
-					if err != nil {
-						logger.Error("BeginBlock failed", "height", height, "error", err)
-						continue
-					}
-
-					// EndBlock
-					_, err = nexusApp.EndBlocker(ctx)
-					if err != nil {
-						logger.Error("EndBlock failed", "height", height, "error", err)
-						continue
-					}
-
-					// Commit
+					// Commit the block
 					nexusApp.Commit()
 
 					logger.Info("Block produced",
