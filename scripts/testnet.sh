@@ -63,9 +63,10 @@ cp $BASE_DIR/node1/config/genesis.json $BASE_DIR/node3/config/genesis.json
 echo ""
 echo "Step 3: Configuring P2P networking..."
 
-NODE1_ID=$(cat $BASE_DIR/node1/config/node_key.json | jq -r '.id')
-NODE2_ID=$(cat $BASE_DIR/node2/config/node_key.json | jq -r '.id')
-NODE3_ID=$(cat $BASE_DIR/node3/config/node_key.json | jq -r '.id')
+# Get node IDs using the binary (which properly derives them from the keys)
+NODE1_ID=$($BINARY tendermint show-node-id --home $BASE_DIR/node1 2>/dev/null)
+NODE2_ID=$($BINARY tendermint show-node-id --home $BASE_DIR/node2 2>/dev/null)
+NODE3_ID=$($BINARY tendermint show-node-id --home $BASE_DIR/node3 2>/dev/null)
 
 for i in 1 2 3; do
     NODE_DIR="$BASE_DIR/node$i"
