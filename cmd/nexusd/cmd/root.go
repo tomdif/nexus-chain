@@ -339,6 +339,13 @@ func StartCmd() *cobra.Command {
 				cmtcfg.WriteConfigFile(configFile, cmtConfig)
 			}
 
+			// Load genesis document first to get chain ID
+			genFile := filepath.Join(configDir, "genesis.json")
+			genDoc, err := cmttypes.GenesisDocFromFile(genFile)
+			if err != nil {
+				return err
+			}
+
 			// Open application database
 			dbPath := filepath.Join(home, "data")
 			db, err := dbm.NewGoLevelDB("application", dbPath, nil)
@@ -353,12 +360,8 @@ func StartCmd() *cobra.Command {
 			// Create NEXUS application
 			nexusApp := app.New(logger, db, nil, true, nil)
 
-			// Load genesis document
-			genFile := filepath.Join(configDir, "genesis.json")
-			genDoc, err := cmttypes.GenesisDocFromFile(genFile)
-			if err != nil {
-				return err
-			}
+			// Set chain ID on the app before InitChain
+			nexusApp.SetChainID(genDoc.ChainID)
 
 			// Convert ConsensusParams to proto type
 			consensusParamsProto := genDoc.ConsensusParams.ToProto()
