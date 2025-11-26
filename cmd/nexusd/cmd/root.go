@@ -190,11 +190,14 @@ func StartCmd() *cobra.Command {
 			ctx := nexusApp.BaseApp.NewContext(true)
 			ctx = ctx.WithBlockHeight(0).WithBlockTime(genDoc.GenesisTime)
 
+			// Convert ConsensusParams to proto type
+			consensusParamsProto := genDoc.ConsensusParams.ToProto()
+
 			// Initialize chain
 			_, err = nexusApp.InitChainer(ctx, &abcitypes.RequestInitChain{
 				Time:            genDoc.GenesisTime,
 				ChainId:         genDoc.ChainID,
-				ConsensusParams: genDoc.ConsensusParams,
+				ConsensusParams: &consensusParamsProto,
 				Validators:      nil,
 				AppStateBytes:   genDoc.AppState,
 			})
