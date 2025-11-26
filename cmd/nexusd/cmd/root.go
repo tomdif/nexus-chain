@@ -17,6 +17,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/client/keys"
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	serverconfig "github.com/cosmos/cosmos-sdk/server/config"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -214,8 +215,11 @@ func InitCmd() *cobra.Command {
 			// Self-delegation amount (must be >= DefaultPowerReduction = 1000000)
 			selfDelegation := math.NewInt(100000000000) // 100K NEX = 100000000000 unexus
 
+			// Convert CometBFT pubkey to SDK pubkey
+			sdkPubKey := &ed25519.PubKey{Key: valPubKey.Bytes()}
+
 			// Convert consensus pubkey to Any
-			pkAny, err := types.NewAnyWithValue(valPubKey)
+			pkAny, err := types.NewAnyWithValue(sdkPubKey)
 			if err != nil {
 				return err
 			}
