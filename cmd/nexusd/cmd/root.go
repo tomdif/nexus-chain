@@ -15,9 +15,9 @@ import (
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/keys"
+	"github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
-	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	serverconfig "github.com/cosmos/cosmos-sdk/server/config"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -199,17 +199,23 @@ func InitCmd() *cobra.Command {
 			}
 
 			// Create commission rates
-			commission := stakingtypes.CommissionRates{
+			commissionRates := stakingtypes.CommissionRates{
 				Rate:          math.LegacyNewDecWithPrec(1, 1), // 10%
 				MaxRate:       math.LegacyNewDecWithPrec(2, 1), // 20%
 				MaxChangeRate: math.LegacyNewDecWithPrec(1, 2), // 1%
+			}
+
+			// Create commission with update time
+			commission := stakingtypes.Commission{
+				CommissionRates: commissionRates,
+				UpdateTime:      time.Now(),
 			}
 
 			// Self-delegation amount (must be >= DefaultPowerReduction = 1000000)
 			selfDelegation := math.NewInt(100000000000) // 100K NEX = 100000000000 unexus
 
 			// Convert consensus pubkey to Any
-			pkAny, err := cryptotypes.NewAnyWithValue(valPubKey)
+			pkAny, err := types.NewAnyWithValue(valPubKey)
 			if err != nil {
 				return err
 			}
