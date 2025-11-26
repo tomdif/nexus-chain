@@ -74,12 +74,23 @@ for i in 1 2 3; do
     P2P_PORT=$((26656 + (i-1)*10))
     RPC_PORT=$((26657 + (i-1)*10))
     
-    # Use more specific sed patterns to avoid ambiguity
-    # Update P2P listen address (in [p2p] section, around line 206)
-    sed -i'' -e "/^\[p2p\]/,/^\[/ s|laddr = \"tcp://0.0.0.0:26656\"|laddr = \"tcp://0.0.0.0:$P2P_PORT\"|" $CONFIG
-    
-    # Update RPC listen address (in [rpc] section, around line 90)
-    sed -i'' -e "/^\[rpc\]/,/^\[/ s|laddr = \"tcp://127.0.0.1:26657\"|laddr = \"tcp://127.0.0.1:$RPC_PORT\"|" $CONFIG
+    # Use awk to update the config file more reliably
+    # This finds the [p2p] section and updates the laddr line within it
+    awk -v p2p_port="$P2P_PORT" -v rpc_port="$RPC_PORT" '
+    BEGIN { in_p2p=0; in_rpc=0; }
+    /^\[p2p\]/ { in_p2p=1; in_rpc=0; }
+    /^\[rpc\]/ { in_rpc=1; in_p2p=0; }
+    /^\[/ && !/^\[p2p\]/ && !/^\[rpc\]/ { in_p2p=0; in_rpc=0; }
+    {
+        if (in_p2p && /^laddr = "tcp:\/\/0\.0\.0\.0:26656"/) {
+            print "laddr = \"tcp://0.0.0.0:" p2p_port "\""
+        } else if (in_rpc && /^laddr = "tcp:\/\/127\.0\.0\.1:26657"/) {
+            print "laddr = \"tcp://127.0.0.1:" rpc_port "\""
+        } else {
+            print $0
+        }
+    }
+    ' $CONFIG > $CONFIG.tmp && mv $CONFIG.tmp $CONFIG
     
     # Build peer list (connect to all other nodes)
     PEERS=""
@@ -88,7 +99,8 @@ for i in 1 2 3; do
     [ $i -ne 3 ] && PEERS="${PEERS}${NODE3_ID}@127.0.0.1:26676,"
     PEERS=${PEERS%,}
     
-    sed -i'' -e "s|persistent_peers = \"\"|persistent_peers = \"$PEERS\"|g" $CONFIG
+    # Update persistent_peers
+    sed -i "s|persistent_peers = \"\"|persistent_peers = \"$PEERS\"|g" $CONFIG
     
     # Verify the changes
     RPC_CHECK=$(grep "laddr = \"tcp://127.0.0.1:" $CONFIG | head -1)
