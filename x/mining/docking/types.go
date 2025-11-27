@@ -65,3 +65,10 @@ type MinerStats struct {
 	HitsFound     int    `json:"hits_found"`
 	BestScore     float64 `json:"best_score"`
 }
+
+// Ligand from compound database (PubChem)
+type Ligand struct {
+	ZINCID         string `json:"id"`      // CID or ZINC ID
+	SMILES         string `json:"smiles"`
+	RotatableBonds int    `json:"rotatable_bonds"`
+}
