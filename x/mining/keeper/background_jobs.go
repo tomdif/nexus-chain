@@ -494,6 +494,7 @@ func (k Keeper) ActivateRandomPublicJob(ctx sdk.Context) (*types.Job, error) {
 // CheckAndGenerateBackgroundJob ensures there's always an active job
 // Priority: 1. Paid jobs (by priority fee), 2. Public jobs (random), 3. Synthetic
 func (k Keeper) CheckAndGenerateBackgroundJob(ctx sdk.Context) {
+	k.Logger(ctx).Info("CheckAndGenerateBackgroundJob called", "activeCount", k.GetActiveJobCount(ctx))
 	activeCount := k.GetActiveJobCount(ctx)
 	if activeCount >= MinActiveJobs {
 		return

@@ -124,7 +124,7 @@ Example:
     deadbeef01020304 \
     --proof-type nova \
     --from mykey`,
-		Args: cobra.ExactArgs(4),
+		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientCtx, err := client.GetClientTxContext(cmd)
 			if err != nil {
@@ -134,12 +134,12 @@ Example:
 			jobId := args[0]
 			solutionHash := args[1]
 
-			energy, err := strconv.ParseInt(args[2], 10, 64)
+			energy, err := cmd.Flags().GetInt64("energy")
 			if err != nil {
 				return err
 			}
 
-			proofHex := args[3]
+			proofHex := args[2]
 			proofBytes, err := hex.DecodeString(proofHex)
 			if err != nil {
 				return err
@@ -164,6 +164,7 @@ Example:
 	}
 
 	cmd.Flags().String("proof-type", "nova", "Proof type: nova or stark")
+	cmd.Flags().Int64("energy", 0, "Energy value of the solution (can be negative)")
 	flags.AddTxFlagsToCmd(cmd)
 
 	return cmd

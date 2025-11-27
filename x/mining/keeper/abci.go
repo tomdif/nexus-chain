@@ -17,6 +17,7 @@ func (k Keeper) BeginBlocker(ctx sdk.Context) error {
 
 	// 2. Check and generate background job if needed
 	// Priority: random public job from queue, then synthetic generation
+	k.Logger(ctx).Info("BeginBlocker called", "height", ctx.BlockHeight())
 	k.CheckAndGenerateBackgroundJob(ctx)
 
 	return nil
