@@ -43,7 +43,7 @@ $BINARY genesis add-genesis-account $VALIDATOR_ADDR 1000000000000$DENOM --home $
 
 # Create genesis transaction
 echo "Creating genesis transaction..."
-$BINARY genesis gentx validator 100000000000$DENOM \
+# $BINARY genesis gentx validator 100000000000$DENOM \
     --chain-id $CHAIN_ID \
     --moniker $MONIKER \
     --commission-rate 0.1 \
@@ -55,11 +55,11 @@ $BINARY genesis gentx validator 100000000000$DENOM \
 
 # Collect genesis transactions
 echo "Collecting genesis transactions..."
-$BINARY genesis collect-gentxs --home $HOME_DIR
+# $BINARY genesis collect-gentxs --home $HOME_DIR
 
 # Validate genesis
 echo "Validating genesis..."
-$BINARY genesis validate-genesis --home $HOME_DIR
+$BINARY genesis validate $HOME_DIR/config/genesis.json --home $HOME_DIR
 
 # Update config for fast blocks (2 seconds)
 echo "Configuring for 2-second blocks..."

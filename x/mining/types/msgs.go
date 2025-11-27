@@ -152,3 +152,51 @@ func (msg MsgSubmitPublicJob) GetSigners() []sdk.AccAddress {
 	submitter, _ := sdk.AccAddressFromBech32(msg.Submitter)
 	return []sdk.AccAddress{submitter}
 }
+
+// MsgSubmitWork - collaborative mining work submission
+// Proves: "I ran L steps of algorithm A from seed S, achieving energy E"
+type MsgSubmitWork struct {
+	Miner          string `protobuf:"bytes,1,opt,name=miner,proto3" json:"miner,omitempty"`
+	JobId          string `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	Epoch          uint64 `protobuf:"varint,3,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	NumSteps       uint64 `protobuf:"varint,4,opt,name=num_steps,json=numSteps,proto3" json:"num_steps,omitempty"`
+	FinalEnergy    int64  `protobuf:"varint,5,opt,name=final_energy,json=finalEnergy,proto3" json:"final_energy,omitempty"`
+	BestEnergy     int64  `protobuf:"varint,6,opt,name=best_energy,json=bestEnergy,proto3" json:"best_energy,omitempty"`
+	BestConfigHash string `protobuf:"bytes,7,opt,name=best_config_hash,json=bestConfigHash,proto3" json:"best_config_hash,omitempty"`
+	Proof          []byte `protobuf:"bytes,8,opt,name=proof,proto3" json:"proof,omitempty"`
+	AlgorithmId    string `protobuf:"bytes,9,opt,name=algorithm_id,json=algorithmId,proto3" json:"algorithm_id,omitempty"`
+}
+
+func (m *MsgSubmitWork) Reset()                  { *m = MsgSubmitWork{} }
+func (m *MsgSubmitWork) String() string          { return "MsgSubmitWork" }
+func (m *MsgSubmitWork) ProtoMessage()           {}
+func (m *MsgSubmitWork) XXX_MessageName() string { return "nexus.mining.MsgSubmitWork" }
+
+func (msg MsgSubmitWork) ValidateBasic() error {
+	if _, err := sdk.AccAddressFromBech32(msg.Miner); err != nil {
+		return ErrInvalidMiner
+	}
+	if msg.NumSteps == 0 {
+		return ErrInvalidProof
+	}
+	if len(msg.Proof) == 0 {
+		return ErrInvalidProof
+	}
+	return nil
+}
+
+func (msg MsgSubmitWork) GetSigners() []sdk.AccAddress {
+	miner, _ := sdk.AccAddressFromBech32(msg.Miner)
+	return []sdk.AccAddress{miner}
+}
+
+// Response types
+type MsgSubmitWorkResponse struct {
+	Accepted    bool  `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	WorkShares  int64 `protobuf:"varint,2,opt,name=work_shares,json=workShares,proto3" json:"work_shares,omitempty"`
+	BonusShares int64 `protobuf:"varint,3,opt,name=bonus_shares,json=bonusShares,proto3" json:"bonus_shares,omitempty"`
+}
+
+func (m *MsgSubmitWorkResponse) Reset()         { *m = MsgSubmitWorkResponse{} }
+func (m *MsgSubmitWorkResponse) String() string { return "MsgSubmitWorkResponse" }
+func (m *MsgSubmitWorkResponse) ProtoMessage()  {}

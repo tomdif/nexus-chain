@@ -64,6 +64,8 @@ func NewAppModule(cdc codec.Codec, keeper keeper.Keeper) AppModule {
 }
 
 func (am AppModule) RegisterServices(cfg module.Configurator) {
+        types.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServerImpl(am.keeper))
+        types.RegisterQueryServer(cfg.QueryServer(), keeper.NewQueryServerImpl(am.keeper))
 	// Will register gRPC services when protobuf is set up
 }
 

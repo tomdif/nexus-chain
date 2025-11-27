@@ -19,6 +19,14 @@ const (
 	ProofTypeSTARK ProofType = 1
 )
 
+// MiningMode determines how rewards are calculated
+type MiningMode uint32
+
+const (
+	MiningModeCompetitive   MiningMode = 0 // Old: compete for best energy
+	MiningModeCollaborative MiningMode = 1 // New: share work, combine results
+)
+
 type Job struct {
 	Id           string    `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Customer     string    `protobuf:"bytes,2,opt,name=customer,proto3" json:"customer,omitempty"`
@@ -37,11 +45,42 @@ type Job struct {
 	PriorityFee  int64     `protobuf:"varint,15,opt,name=priority_fee,json=priorityFee,proto3" json:"priority_fee,omitempty"`
 	Title        string    `protobuf:"bytes,16,opt,name=title,proto3" json:"title,omitempty"`
 	IpfsCid      string    `protobuf:"bytes,17,opt,name=ipfs_cid,json=ipfsCid,proto3" json:"ipfs_cid,omitempty"`
+
+	// Collaborative mining fields
+	MiningMode       MiningMode `protobuf:"varint,18,opt,name=mining_mode,json=miningMode,proto3,casttype=MiningMode" json:"mining_mode,omitempty"`
+	CurrentEpoch     uint64     `protobuf:"varint,19,opt,name=current_epoch,json=currentEpoch,proto3" json:"current_epoch,omitempty"`
+	TotalSteps       uint64     `protobuf:"varint,20,opt,name=total_steps,json=totalSteps,proto3" json:"total_steps,omitempty"`
+	WorkPoolShares   int64      `protobuf:"varint,21,opt,name=work_pool_shares,json=workPoolShares,proto3" json:"work_pool_shares,omitempty"`
+	BonusPoolShares  int64      `protobuf:"varint,22,opt,name=bonus_pool_shares,json=bonusPoolShares,proto3" json:"bonus_pool_shares,omitempty"`
+	VrfRandomness    string     `protobuf:"bytes,23,opt,name=vrf_randomness,json=vrfRandomness,proto3" json:"vrf_randomness,omitempty"`
+	AlgorithmId      string     `protobuf:"bytes,24,opt,name=algorithm_id,json=algorithmId,proto3" json:"algorithm_id,omitempty"`
+	SubmissionCount  int64      `protobuf:"varint,25,opt,name=submission_count,json=submissionCount,proto3" json:"submission_count,omitempty"`
 }
 
 func (j *Job) Reset()         { *j = Job{} }
 func (j *Job) String() string { return j.Id }
 func (j *Job) ProtoMessage()  {}
+
+// WorkSubmission tracks a single work submission for collaborative mining
+type WorkSubmission struct {
+	Id             string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	JobId          string `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	Miner          string `protobuf:"bytes,3,opt,name=miner,proto3" json:"miner,omitempty"`
+	Epoch          uint64 `protobuf:"varint,4,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	NumSteps       uint64 `protobuf:"varint,5,opt,name=num_steps,json=numSteps,proto3" json:"num_steps,omitempty"`
+	FinalEnergy    int64  `protobuf:"varint,6,opt,name=final_energy,json=finalEnergy,proto3" json:"final_energy,omitempty"`
+	BestEnergy     int64  `protobuf:"varint,7,opt,name=best_energy,json=bestEnergy,proto3" json:"best_energy,omitempty"`
+	BestConfigHash string `protobuf:"bytes,8,opt,name=best_config_hash,json=bestConfigHash,proto3" json:"best_config_hash,omitempty"`
+	ProofHash      string `protobuf:"bytes,9,opt,name=proof_hash,json=proofHash,proto3" json:"proof_hash,omitempty"`
+	Verified       bool   `protobuf:"varint,10,opt,name=verified,proto3" json:"verified,omitempty"`
+	WorkShares     int64  `protobuf:"varint,11,opt,name=work_shares,json=workShares,proto3" json:"work_shares,omitempty"`
+	BonusShares    int64  `protobuf:"varint,12,opt,name=bonus_shares,json=bonusShares,proto3" json:"bonus_shares,omitempty"`
+	SubmittedAt    int64  `protobuf:"varint,13,opt,name=submitted_at,json=submittedAt,proto3" json:"submitted_at,omitempty"`
+}
+
+func (w *WorkSubmission) Reset()         { *w = WorkSubmission{} }
+func (w *WorkSubmission) String() string { return w.Id }
+func (w *WorkSubmission) ProtoMessage()  {}
 
 type Checkpoint struct {
 	Id               uint64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`

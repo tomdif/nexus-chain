@@ -155,3 +155,98 @@ func uint64ToBytes(n uint64) []byte {
 	return b
 }
 
+
+// ============================================
+// Collaborative Mining Storage Methods
+// ============================================
+
+// GetWorkSubmission retrieves a work submission by ID
+func (k Keeper) GetWorkSubmission(ctx sdk.Context, submissionId string) (types.WorkSubmission, bool) {
+	store := ctx.KVStore(k.storeKey)
+	key := append(types.WorkSubmissionKeyPrefix, []byte(submissionId)...)
+	bz := store.Get(key)
+	if bz == nil {
+		return types.WorkSubmission{}, false
+	}
+	var submission types.WorkSubmission
+	k.cdc.MustUnmarshal(bz, &submission)
+	return submission, true
+}
+
+// SetWorkSubmission stores a work submission
+func (k Keeper) SetWorkSubmission(ctx sdk.Context, submission types.WorkSubmission) {
+	store := ctx.KVStore(k.storeKey)
+	key := append(types.WorkSubmissionKeyPrefix, []byte(submission.Id)...)
+	bz := k.cdc.MustMarshal(&submission)
+	store.Set(key, bz)
+}
+
+// GetWorkShares retrieves work shares for a miner on a job
+func (k Keeper) GetWorkShares(ctx sdk.Context, miner sdk.AccAddress, jobId string) int64 {
+	store := ctx.KVStore(k.storeKey)
+	key := append(types.WorkShareKeyPrefix, append(miner.Bytes(), []byte(jobId)...)...)
+	bz := store.Get(key)
+	if bz == nil {
+		return 0
+	}
+	return int64(binary.BigEndian.Uint64(bz))
+}
+
+// SetWorkShares sets work shares for a miner on a job
+func (k Keeper) SetWorkShares(ctx sdk.Context, miner sdk.AccAddress, jobId string, shares int64) {
+	store := ctx.KVStore(k.storeKey)
+	key := append(types.WorkShareKeyPrefix, append(miner.Bytes(), []byte(jobId)...)...)
+	store.Set(key, uint64ToBytes(uint64(shares)))
+}
+
+// GetBonusShares retrieves bonus shares for a miner on a job
+func (k Keeper) GetBonusShares(ctx sdk.Context, miner sdk.AccAddress, jobId string) int64 {
+	store := ctx.KVStore(k.storeKey)
+	key := append(types.BonusShareKeyPrefix, append(miner.Bytes(), []byte(jobId)...)...)
+	bz := store.Get(key)
+	if bz == nil {
+		return 0
+	}
+	return int64(binary.BigEndian.Uint64(bz))
+}
+
+// SetBonusShares sets bonus shares for a miner on a job
+func (k Keeper) SetBonusShares(ctx sdk.Context, miner sdk.AccAddress, jobId string, shares int64) {
+	store := ctx.KVStore(k.storeKey)
+	key := append(types.BonusShareKeyPrefix, append(miner.Bytes(), []byte(jobId)...)...)
+	store.Set(key, uint64ToBytes(uint64(shares)))
+}
+
+// GetJobEpoch retrieves the current epoch for a job
+func (k Keeper) GetJobEpoch(ctx sdk.Context, jobId string) uint64 {
+	store := ctx.KVStore(k.storeKey)
+	key := append(types.EpochKeyPrefix, []byte(jobId)...)
+	bz := store.Get(key)
+	if bz == nil {
+		return 0
+	}
+	return binary.BigEndian.Uint64(bz)
+}
+
+// SetJobEpoch sets the current epoch for a job
+func (k Keeper) SetJobEpoch(ctx sdk.Context, jobId string, epoch uint64) {
+	store := ctx.KVStore(k.storeKey)
+	key := append(types.EpochKeyPrefix, []byte(jobId)...)
+	store.Set(key, uint64ToBytes(epoch))
+}
+
+// IterateWorkSubmissions iterates over all work submissions for a job
+func (k Keeper) IterateWorkSubmissions(ctx sdk.Context, jobId string, cb func(submission types.WorkSubmission) bool) {
+	store := ctx.KVStore(k.storeKey)
+	prefix := append(types.WorkSubmissionKeyPrefix, []byte(jobId)...)
+	iterator := storetypes.KVStorePrefixIterator(store, prefix)
+	defer iterator.Close()
+
+	for ; iterator.Valid(); iterator.Next() {
+		var submission types.WorkSubmission
+		k.cdc.MustUnmarshal(iterator.Value(), &submission)
+		if cb(submission) {
+			break
+		}
+	}
+}

@@ -40,6 +40,8 @@ import (
 
 	"nexus/app"
 	miningcli "nexus/x/mining/client/cli"
+        genutilcli "github.com/cosmos/cosmos-sdk/x/genutil/client/cli"
+        genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 )
 
 func NewRootCmd() *cobra.Command {
@@ -71,6 +73,7 @@ func NewRootCmd() *cobra.Command {
 		QueryCmd(),
 		keys.Commands(),
 		VersionCmd(),
+                GenesisCmd(),
 	)
 	rootCmd.PersistentFlags().String(flags.FlagHome, app.DefaultNodeHome, "home")
 	return rootCmd
@@ -86,8 +89,18 @@ func TxCmd() *cobra.Command {
 }
 
 func QueryCmd() *cobra.Command {
+        encodingConfig := app.MakeEncodingConfig()
 	cmd := &cobra.Command{
-		Use:     "query",
+		Use:   "query",
+                PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+                        cmd.SetOut(cmd.OutOrStdout())
+                        cmd.SetErr(cmd.ErrOrStderr())
+                        clientCtx := client.Context{}.WithCodec(encodingConfig.Codec).WithInterfaceRegistry(encodingConfig.InterfaceRegistry).WithTxConfig(encodingConfig.TxConfig).WithLegacyAmino(encodingConfig.Amino).WithInput(os.Stdin)
+                        if err := client.SetCmdClientContext(cmd, clientCtx); err != nil {
+                                return err
+                        }
+                        return nil
+                },
 		Short:   "Query commands",
 		Aliases: []string{"q"},
 	}
@@ -101,7 +114,7 @@ func InitCmd() *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			home, _ := cmd.Flags().GetString(flags.FlagHome)
-			chainID := "nexus-testnet-1"
+			chainID, _ := cmd.Flags().GetString("chain-id")
 			configDir := filepath.Join(home, "config")
 			dataDir := filepath.Join(home, "data")
 			os.MkdirAll(configDir, 0755)
@@ -321,6 +334,7 @@ func InitCmd() *cobra.Command {
 			return nil
 		},
 	}
+        cmd.Flags().String("chain-id", "nexus-testnet-1", "Chain ID for the network")
 	return cmd
 }
 
@@ -454,6 +468,35 @@ func VersionCmd() *cobra.Command {
 			cmd.Println("NEXUS v0.1.0")
 		},
 	}
+}
+
+func GenesisCmd() *cobra.Command {
+        txConfig := app.MakeEncodingConfig().TxConfig
+        cmd := &cobra.Command{
+                Use:   "genesis",
+                Short: "Genesis utilities",
+        }
+        cmd.AddCommand(
+                genutilcli.AddGenesisAccountCmd(
+                        app.DefaultNodeHome,
+                        txConfig.SigningContext().AddressCodec(),
+                ),
+                genutilcli.GenTxCmd(
+                        app.ModuleBasics,
+                        txConfig,
+                        banktypes.GenesisBalancesIterator{},
+                        app.DefaultNodeHome,
+                        txConfig.SigningContext().ValidatorAddressCodec(),
+                ),
+                genutilcli.CollectGenTxsCmd(
+                        banktypes.GenesisBalancesIterator{},
+                        app.DefaultNodeHome,
+                        genutiltypes.DefaultMessageValidator,
+                        txConfig.SigningContext().ValidatorAddressCodec(),
+                ),
+                genutilcli.ValidateGenesisCmd(app.ModuleBasics),
+        )
+        return cmd
 }
 
 // cometLogger adapts cosmossdk log.Logger to CometBFT's logger interface

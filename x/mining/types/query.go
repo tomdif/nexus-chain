@@ -5,6 +5,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"google.golang.org/grpc"
 )
 
 type QueryParamsRequest struct{}
@@ -173,7 +174,6 @@ func (m *QueryLatestCheckpointResponse) Reset()         { *m = QueryLatestCheckp
 func (m *QueryLatestCheckpointResponse) String() string { return "QueryLatestCheckpointResponse" }
 func (m *QueryLatestCheckpointResponse) ProtoMessage()  {}
 
-// Message responses
 type MsgPostJobResponse struct {
 	JobId         string `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	QueuePosition int64  `protobuf:"varint,2,opt,name=queue_position,json=queuePosition,proto3" json:"queue_position,omitempty"`
@@ -217,8 +217,289 @@ func (m *MsgSubmitPublicJobResponse) Reset()         { *m = MsgSubmitPublicJobRe
 func (m *MsgSubmitPublicJobResponse) String() string { return "MsgSubmitPublicJobResponse" }
 func (m *MsgSubmitPublicJobResponse) ProtoMessage()  {}
 
-// Server interfaces
+func RegisterQueryServer(s grpc.ServiceRegistrar, srv QueryServer) {
+	s.RegisterService(&QueryServiceDesc, srv)
+}
+
+func RegisterMsgServer(s grpc.ServiceRegistrar, srv MsgServer) {
+	s.RegisterService(&MsgServiceDesc, srv)
+}
+
+var QueryServiceDesc = grpc.ServiceDesc{
+	ServiceName: "nexus.mining.v1.Query",
+	HandlerType: (*QueryServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{MethodName: "Params", Handler: _Query_Params_Handler},
+		{MethodName: "Job", Handler: _Query_Job_Handler},
+		{MethodName: "Jobs", Handler: _Query_Jobs_Handler},
+		{MethodName: "MinerShares", Handler: _Query_MinerShares_Handler},
+		{MethodName: "MinerStats", Handler: _Query_MinerStats_Handler},
+		{MethodName: "ActiveJob", Handler: _Query_ActiveJob_Handler},
+		{MethodName: "QueueStatus", Handler: _Query_QueueStatus_Handler},
+		{MethodName: "EmissionInfo", Handler: _Query_EmissionInfo_Handler},
+		{MethodName: "ValidatorMiningRecord", Handler: _Query_ValidatorMiningRecord_Handler},
+		{MethodName: "Checkpoint", Handler: _Query_Checkpoint_Handler},
+		{MethodName: "LatestCheckpoint", Handler: _Query_LatestCheckpoint_Handler},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "nexus/mining/v1/query.proto",
+}
+
+var MsgServiceDesc = grpc.ServiceDesc{
+	ServiceName: "nexus.mining.v1.Msg",
+	HandlerType: (*MsgServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{MethodName: "SubmitWork", Handler: _Msg_SubmitWork_Handler},
+		{MethodName: "PostJob", Handler: _Msg_PostJob_Handler},
+		{MethodName: "SubmitProof", Handler: _Msg_SubmitProof_Handler},
+		{MethodName: "ClaimRewards", Handler: _Msg_ClaimRewards_Handler},
+		{MethodName: "CancelJob", Handler: _Msg_CancelJob_Handler},
+		{MethodName: "SubmitPublicJob", Handler: _Msg_SubmitPublicJob_Handler},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "nexus/mining/v1/tx.proto",
+}
+
+func _Query_Params_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryParamsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).Params(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Query/Params"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).Params(ctx, req.(*QueryParamsRequest))
+	})
+}
+
+func _Query_Job_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryJobRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).Job(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Query/Job"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).Job(ctx, req.(*QueryJobRequest))
+	})
+}
+
+func _Query_Jobs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryJobsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).Jobs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Query/Jobs"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).Jobs(ctx, req.(*QueryJobsRequest))
+	})
+}
+
+func _Query_MinerShares_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryMinerSharesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).MinerShares(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Query/MinerShares"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).MinerShares(ctx, req.(*QueryMinerSharesRequest))
+	})
+}
+
+func _Query_MinerStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryMinerStatsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).MinerStats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Query/MinerStats"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).MinerStats(ctx, req.(*QueryMinerStatsRequest))
+	})
+}
+
+func _Query_ActiveJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryActiveJobRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ActiveJob(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Query/ActiveJob"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ActiveJob(ctx, req.(*QueryActiveJobRequest))
+	})
+}
+
+func _Query_QueueStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryQueueStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).QueueStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Query/QueueStatus"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).QueueStatus(ctx, req.(*QueryQueueStatusRequest))
+	})
+}
+
+func _Query_EmissionInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryEmissionInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).EmissionInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Query/EmissionInfo"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).EmissionInfo(ctx, req.(*QueryEmissionInfoRequest))
+	})
+}
+
+func _Query_ValidatorMiningRecord_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryValidatorMiningRecordRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ValidatorMiningRecord(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Query/ValidatorMiningRecord"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ValidatorMiningRecord(ctx, req.(*QueryValidatorMiningRecordRequest))
+	})
+}
+
+func _Query_Checkpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryCheckpointRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).Checkpoint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Query/Checkpoint"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).Checkpoint(ctx, req.(*QueryCheckpointRequest))
+	})
+}
+
+func _Query_LatestCheckpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryLatestCheckpointRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).LatestCheckpoint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Query/LatestCheckpoint"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).LatestCheckpoint(ctx, req.(*QueryLatestCheckpointRequest))
+	})
+}
+
+func _Msg_SubmitWork_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgSubmitWork)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).SubmitWork(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Msg/SubmitWork"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).SubmitWork(ctx, req.(*MsgSubmitWork))
+	})
+}
+
+func _Msg_PostJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgPostJob)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).PostJob(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Msg/PostJob"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).PostJob(ctx, req.(*MsgPostJob))
+	})
+}
+
+func _Msg_SubmitProof_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgSubmitProof)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).SubmitProof(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Msg/SubmitProof"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).SubmitProof(ctx, req.(*MsgSubmitProof))
+	})
+}
+
+func _Msg_ClaimRewards_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgClaimRewards)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).ClaimRewards(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Msg/ClaimRewards"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).ClaimRewards(ctx, req.(*MsgClaimRewards))
+	})
+}
+
+func _Msg_CancelJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgCancelJob)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).CancelJob(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Msg/CancelJob"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).CancelJob(ctx, req.(*MsgCancelJob))
+	})
+}
+
+func _Msg_SubmitPublicJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgSubmitPublicJob)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).SubmitPublicJob(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/nexus.mining.v1.Msg/SubmitPublicJob"}
+	return interceptor(ctx, in, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).SubmitPublicJob(ctx, req.(*MsgSubmitPublicJob))
+	})
+}
+
 type MsgServer interface {
+	SubmitWork(context.Context, *MsgSubmitWork) (*MsgSubmitWorkResponse, error)
 	PostJob(context.Context, *MsgPostJob) (*MsgPostJobResponse, error)
 	SubmitProof(context.Context, *MsgSubmitProof) (*MsgSubmitProofResponse, error)
 	ClaimRewards(context.Context, *MsgClaimRewards) (*MsgClaimRewardsResponse, error)
@@ -240,7 +521,6 @@ type QueryServer interface {
 	LatestCheckpoint(context.Context, *QueryLatestCheckpointRequest) (*QueryLatestCheckpointResponse, error)
 }
 
-// NewQueryClient creates a new QueryClient
 func NewQueryClient(clientCtx client.Context) QueryClient {
 	return &queryClient{clientCtx: clientCtx}
 }
@@ -264,45 +544,100 @@ type queryClient struct {
 }
 
 func (q *queryClient) Params(ctx context.Context, req *QueryParamsRequest) (*QueryParamsResponse, error) {
-	return nil, nil
+	out := new(QueryParamsResponse)
+	err := q.clientCtx.Invoke(ctx, "/nexus.mining.v1.Query/Params", req, out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (q *queryClient) Job(ctx context.Context, req *QueryJobRequest) (*QueryJobResponse, error) {
-	return nil, nil
+	out := new(QueryJobResponse)
+	err := q.clientCtx.Invoke(ctx, "/nexus.mining.v1.Query/Job", req, out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (q *queryClient) Jobs(ctx context.Context, req *QueryJobsRequest) (*QueryJobsResponse, error) {
-	return nil, nil
+	out := new(QueryJobsResponse)
+	err := q.clientCtx.Invoke(ctx, "/nexus.mining.v1.Query/Jobs", req, out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (q *queryClient) MinerShares(ctx context.Context, req *QueryMinerSharesRequest) (*QueryMinerSharesResponse, error) {
-	return nil, nil
+	out := new(QueryMinerSharesResponse)
+	err := q.clientCtx.Invoke(ctx, "/nexus.mining.v1.Query/MinerShares", req, out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (q *queryClient) MinerStats(ctx context.Context, req *QueryMinerStatsRequest) (*QueryMinerStatsResponse, error) {
-	return nil, nil
+	out := new(QueryMinerStatsResponse)
+	err := q.clientCtx.Invoke(ctx, "/nexus.mining.v1.Query/MinerStats", req, out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (q *queryClient) ActiveJob(ctx context.Context, req *QueryActiveJobRequest) (*QueryActiveJobResponse, error) {
-	return nil, nil
+	out := new(QueryActiveJobResponse)
+	err := q.clientCtx.Invoke(ctx, "/nexus.mining.v1.Query/ActiveJob", req, out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (q *queryClient) QueueStatus(ctx context.Context, req *QueryQueueStatusRequest) (*QueryQueueStatusResponse, error) {
-	return nil, nil
+	out := new(QueryQueueStatusResponse)
+	err := q.clientCtx.Invoke(ctx, "/nexus.mining.v1.Query/QueueStatus", req, out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (q *queryClient) EmissionInfo(ctx context.Context, req *QueryEmissionInfoRequest) (*QueryEmissionInfoResponse, error) {
-	return nil, nil
+	out := new(QueryEmissionInfoResponse)
+	err := q.clientCtx.Invoke(ctx, "/nexus.mining.v1.Query/EmissionInfo", req, out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (q *queryClient) ValidatorMiningRecord(ctx context.Context, req *QueryValidatorMiningRecordRequest) (*QueryValidatorMiningRecordResponse, error) {
-	return nil, nil
+	out := new(QueryValidatorMiningRecordResponse)
+	err := q.clientCtx.Invoke(ctx, "/nexus.mining.v1.Query/ValidatorMiningRecord", req, out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (q *queryClient) Checkpoint(ctx context.Context, req *QueryCheckpointRequest) (*QueryCheckpointResponse, error) {
-	return nil, nil
+	out := new(QueryCheckpointResponse)
+	err := q.clientCtx.Invoke(ctx, "/nexus.mining.v1.Query/Checkpoint", req, out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (q *queryClient) LatestCheckpoint(ctx context.Context, req *QueryLatestCheckpointRequest) (*QueryLatestCheckpointResponse, error) {
-	return nil, nil
+	out := new(QueryLatestCheckpointResponse)
+	err := q.clientCtx.Invoke(ctx, "/nexus.mining.v1.Query/LatestCheckpoint", req, out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }

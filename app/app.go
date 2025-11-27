@@ -15,6 +15,9 @@ import (
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+        addresscodec "github.com/cosmos/cosmos-sdk/codec/address"
+        "cosmossdk.io/x/tx/signing"
+        "github.com/cosmos/gogoproto/proto"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/cosmos/cosmos-sdk/server/api"
 	"github.com/cosmos/cosmos-sdk/server/config"
@@ -236,6 +239,7 @@ func New(
 
 	// Set up custom AnteHandler with 50% fee burn
 	anteHandler, err := nexusante.NewAnteHandler(nexusante.HandlerOptions{
+                SignModeHandler: txConfig.SignModeHandler(),
 		AccountKeeper:  app.AccountKeeper,
 		BankKeeper:     app.BankKeeper,
 		FeegrantKeeper: nil,
@@ -329,21 +333,42 @@ type EncodingConfig struct {
 }
 
 func MakeEncodingConfig() EncodingConfig {
-	interfaceRegistry := codectypes.NewInterfaceRegistry()
-	cdc := codec.NewProtoCodec(interfaceRegistry)
-	amino := codec.NewLegacyAmino()
-
-	std.RegisterLegacyAminoCodec(amino)
-	std.RegisterInterfaces(interfaceRegistry)
-	ModuleBasics.RegisterLegacyAminoCodec(amino)
-	ModuleBasics.RegisterInterfaces(interfaceRegistry)
-
-	txConfig := authtx.NewTxConfig(cdc, authtx.DefaultSignModes)
-
-	return EncodingConfig{
-		InterfaceRegistry: interfaceRegistry,
-		Codec:             cdc,
-		TxConfig:          txConfig,
-		Amino:             amino,
-	}
+        // Create address codecs
+        addrCodec := addresscodec.NewBech32Codec("nexus")
+        valAddrCodec := addresscodec.NewBech32Codec("nexusvaloper")
+        
+        // Create interface registry with proper signing options
+        interfaceRegistry, err := codectypes.NewInterfaceRegistryWithOptions(codectypes.InterfaceRegistryOptions{
+                ProtoFiles: proto.HybridResolver,
+                SigningOptions: signing.Options{
+                        AddressCodec:          addrCodec,
+                        ValidatorAddressCodec: valAddrCodec,
+                },
+        })
+        if err != nil {
+                panic(err)
+        }
+        
+        cdc := codec.NewProtoCodec(interfaceRegistry)
+        amino := codec.NewLegacyAmino()
+        std.RegisterLegacyAminoCodec(amino)
+        std.RegisterInterfaces(interfaceRegistry)
+        ModuleBasics.RegisterLegacyAminoCodec(amino)
+        ModuleBasics.RegisterInterfaces(interfaceRegistry)
+        txConfig, err := authtx.NewTxConfigWithOptions(cdc, authtx.ConfigOptions{
+                SigningOptions: &signing.Options{
+                        AddressCodec:          addrCodec,
+                        ValidatorAddressCodec: valAddrCodec,
+                },
+                EnabledSignModes: authtx.DefaultSignModes,
+        })
+        if err != nil {
+                panic(err)
+        }
+        return EncodingConfig{
+                InterfaceRegistry: interfaceRegistry,
+                Codec:             cdc,
+                TxConfig:          txConfig,
+                Amino:             amino,
+        }
 }
