@@ -27,3 +27,11 @@ var (
 	BonusShareKeyPrefix     = []byte{0x12}
 	EpochKeyPrefix          = []byte{0x13}
 )
+
+// Docking-specific key prefixes
+var (
+	DockingJobKeyPrefix    = []byte{0x20}
+	DockingResultKeyPrefix = []byte{0x21}
+	DockingHitKeyPrefix    = []byte{0x22}
+	DockingClaimKeyPrefix  = []byte{0x23}
+)

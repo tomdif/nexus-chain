@@ -200,3 +200,134 @@ type MsgSubmitWorkResponse struct {
 func (m *MsgSubmitWorkResponse) Reset()         { *m = MsgSubmitWorkResponse{} }
 func (m *MsgSubmitWorkResponse) String() string { return "MsgSubmitWorkResponse" }
 func (m *MsgSubmitWorkResponse) ProtoMessage()  {}
+
+// ============================================
+// Molecular Docking Messages
+// ============================================
+
+// MsgSubmitDockingResult - submit a single ligand docking result
+type MsgSubmitDockingResult struct {
+	Miner          string  `protobuf:"bytes,1,opt,name=miner,proto3" json:"miner,omitempty"`
+	JobId          string  `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	LigandId       string  `protobuf:"bytes,3,opt,name=ligand_id,json=ligandId,proto3" json:"ligand_id,omitempty"`
+	LigandSMILES   string  `protobuf:"bytes,4,opt,name=ligand_smiles,json=ligandSmiles,proto3" json:"ligand_smiles,omitempty"`
+	BindingScore   float64 `protobuf:"fixed64,5,opt,name=binding_score,json=bindingScore,proto3" json:"binding_score,omitempty"`
+	RotatableBonds int32   `protobuf:"varint,6,opt,name=rotatable_bonds,json=rotatableBonds,proto3" json:"rotatable_bonds,omitempty"`
+	PoseData       []byte  `protobuf:"bytes,7,opt,name=pose_data,json=poseData,proto3" json:"pose_data,omitempty"`
+}
+
+func (m *MsgSubmitDockingResult) Reset()                  { *m = MsgSubmitDockingResult{} }
+func (m *MsgSubmitDockingResult) String() string          { return "MsgSubmitDockingResult" }
+func (m *MsgSubmitDockingResult) ProtoMessage()           {}
+func (m *MsgSubmitDockingResult) XXX_MessageName() string { return "nexus.mining.MsgSubmitDockingResult" }
+
+func (msg MsgSubmitDockingResult) ValidateBasic() error {
+	if _, err := sdk.AccAddressFromBech32(msg.Miner); err != nil {
+		return ErrInvalidMiner
+	}
+	if len(msg.JobId) == 0 {
+		return ErrInvalidJob
+	}
+	if len(msg.LigandId) == 0 {
+		return ErrInvalidJob
+	}
+	return nil
+}
+
+func (msg MsgSubmitDockingResult) GetSigners() []sdk.AccAddress {
+	miner, _ := sdk.AccAddressFromBech32(msg.Miner)
+	return []sdk.AccAddress{miner}
+}
+
+type MsgSubmitDockingResultResponse struct {
+	Accepted bool  `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	Reward   int64 `protobuf:"varint,2,opt,name=reward,proto3" json:"reward,omitempty"`
+	IsHit    bool  `protobuf:"varint,3,opt,name=is_hit,json=isHit,proto3" json:"is_hit,omitempty"`
+}
+
+func (m *MsgSubmitDockingResultResponse) Reset()         { *m = MsgSubmitDockingResultResponse{} }
+func (m *MsgSubmitDockingResultResponse) String() string { return "MsgSubmitDockingResultResponse" }
+func (m *MsgSubmitDockingResultResponse) ProtoMessage()  {}
+
+// MsgClaimDockingJob - miner claims a batch of ligands to dock
+type MsgClaimDockingJob struct {
+	Miner     string `protobuf:"bytes,1,opt,name=miner,proto3" json:"miner,omitempty"`
+	JobId     string `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	BatchSize int32  `protobuf:"varint,3,opt,name=batch_size,json=batchSize,proto3" json:"batch_size,omitempty"`
+}
+
+func (m *MsgClaimDockingJob) Reset()                  { *m = MsgClaimDockingJob{} }
+func (m *MsgClaimDockingJob) String() string          { return "MsgClaimDockingJob" }
+func (m *MsgClaimDockingJob) ProtoMessage()           {}
+func (m *MsgClaimDockingJob) XXX_MessageName() string { return "nexus.mining.MsgClaimDockingJob" }
+
+func (msg MsgClaimDockingJob) ValidateBasic() error {
+	if _, err := sdk.AccAddressFromBech32(msg.Miner); err != nil {
+		return ErrInvalidMiner
+	}
+	return nil
+}
+
+func (msg MsgClaimDockingJob) GetSigners() []sdk.AccAddress {
+	miner, _ := sdk.AccAddressFromBech32(msg.Miner)
+	return []sdk.AccAddress{miner}
+}
+
+type MsgClaimDockingJobResponse struct {
+	JobId       string `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	ProteinPDB  string `protobuf:"bytes,2,opt,name=protein_pdb,json=proteinPdb,proto3" json:"protein_pdb,omitempty"`
+	TargetHash  string `protobuf:"bytes,3,opt,name=target_hash,json=targetHash,proto3" json:"target_hash,omitempty"`
+	StartLigand int64  `protobuf:"varint,4,opt,name=start_ligand,json=startLigand,proto3" json:"start_ligand,omitempty"`
+	EndLigand   int64  `protobuf:"varint,5,opt,name=end_ligand,json=endLigand,proto3" json:"end_ligand,omitempty"`
+	CenterX     float64 `protobuf:"fixed64,6,opt,name=center_x,json=centerX,proto3" json:"center_x,omitempty"`
+	CenterY     float64 `protobuf:"fixed64,7,opt,name=center_y,json=centerY,proto3" json:"center_y,omitempty"`
+	CenterZ     float64 `protobuf:"fixed64,8,opt,name=center_z,json=centerZ,proto3" json:"center_z,omitempty"`
+	SizeX       float64 `protobuf:"fixed64,9,opt,name=size_x,json=sizeX,proto3" json:"size_x,omitempty"`
+	SizeY       float64 `protobuf:"fixed64,10,opt,name=size_y,json=sizeY,proto3" json:"size_y,omitempty"`
+	SizeZ       float64 `protobuf:"fixed64,11,opt,name=size_z,json=sizeZ,proto3" json:"size_z,omitempty"`
+}
+
+func (m *MsgClaimDockingJobResponse) Reset()         { *m = MsgClaimDockingJobResponse{} }
+func (m *MsgClaimDockingJobResponse) String() string { return "MsgClaimDockingJobResponse" }
+func (m *MsgClaimDockingJobResponse) ProtoMessage()  {}
+
+// MsgCreateDockingJob - create a new docking job (background or paid)
+type MsgCreateDockingJob struct {
+	Creator      string  `protobuf:"bytes,1,opt,name=creator,proto3" json:"creator,omitempty"`
+	TargetHash   string  `protobuf:"bytes,2,opt,name=target_hash,json=targetHash,proto3" json:"target_hash,omitempty"`
+	ProteinPDB   string  `protobuf:"bytes,3,opt,name=protein_pdb,json=proteinPdb,proto3" json:"protein_pdb,omitempty"`
+	TotalLigands int64   `protobuf:"varint,4,opt,name=total_ligands,json=totalLigands,proto3" json:"total_ligands,omitempty"`
+	CenterX      float64 `protobuf:"fixed64,5,opt,name=center_x,json=centerX,proto3" json:"center_x,omitempty"`
+	CenterY      float64 `protobuf:"fixed64,6,opt,name=center_y,json=centerY,proto3" json:"center_y,omitempty"`
+	CenterZ      float64 `protobuf:"fixed64,7,opt,name=center_z,json=centerZ,proto3" json:"center_z,omitempty"`
+	IsBackground bool    `protobuf:"varint,8,opt,name=is_background,json=isBackground,proto3" json:"is_background,omitempty"`
+	Reward       sdk.Coins `protobuf:"bytes,9,rep,name=reward,proto3,castrepeated=github.com/cosmos/cosmos-sdk/types.Coins" json:"reward,omitempty"`
+}
+
+func (m *MsgCreateDockingJob) Reset()                  { *m = MsgCreateDockingJob{} }
+func (m *MsgCreateDockingJob) String() string          { return "MsgCreateDockingJob" }
+func (m *MsgCreateDockingJob) ProtoMessage()           {}
+func (m *MsgCreateDockingJob) XXX_MessageName() string { return "nexus.mining.MsgCreateDockingJob" }
+
+func (msg MsgCreateDockingJob) ValidateBasic() error {
+	if _, err := sdk.AccAddressFromBech32(msg.Creator); err != nil {
+		return ErrUnauthorized
+	}
+	if len(msg.TargetHash) == 0 {
+		return ErrInvalidJob
+	}
+	return nil
+}
+
+func (msg MsgCreateDockingJob) GetSigners() []sdk.AccAddress {
+	creator, _ := sdk.AccAddressFromBech32(msg.Creator)
+	return []sdk.AccAddress{creator}
+}
+
+type MsgCreateDockingJobResponse struct {
+	JobId string `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+}
+
+func (m *MsgCreateDockingJobResponse) Reset()         { *m = MsgCreateDockingJobResponse{} }
+func (m *MsgCreateDockingJobResponse) String() string { return "MsgCreateDockingJobResponse" }
+func (m *MsgCreateDockingJobResponse) ProtoMessage()  {}
