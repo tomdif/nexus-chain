@@ -1,3 +1,4 @@
 /nexusd
 *.log
 .aider*
+build/
